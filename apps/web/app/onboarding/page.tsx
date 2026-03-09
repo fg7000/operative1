@@ -42,14 +42,16 @@ export default function OnboardingPage() {
       if (content.includes('```')) {
         jsonContent = content
           .split('\n')
-          .filter((line: string) => !line.trim().startsWith('```'))
+          .filter((line: string) => !line.includes('```'))
           .join('\n')
           .trim()
       }
       const parsed = JSON.parse(jsonContent)
       if (parsed.ready && parsed.config) {
         const config = parsed.config
+        // Set both before rendering so the Launch button appears
         setProductConfig(config)
+        setDone(true)
         // Build a friendly confirmation message
         const keywordCount = Object.values(config.keywords || {}).flat().length
         const tone = config.tone || 'professional'
@@ -57,7 +59,6 @@ export default function OnboardingPage() {
           role: 'assistant',
           content: `All set! I've configured ${config.name} with ${keywordCount} keywords and a ${tone} tone.\n\nReady to launch?`
         }])
-        setDone(true)
         setLoading(false)
         return
       }
