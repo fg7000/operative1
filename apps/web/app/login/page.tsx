@@ -1,5 +1,4 @@
 'use client'
-
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { useRouter } from 'next/navigation'
@@ -14,8 +13,7 @@ export default function LoginPage() {
   const supabase = createClient()
 
   async function handleSubmit() {
-    setLoading(true)
-    setError('')
+    setLoading(true); setError('')
     if (mode === 'signup') {
       const { error } = await supabase.auth.signUp({ email, password })
       if (error) { setError(error.message); setLoading(false); return }
@@ -29,57 +27,64 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{fontFamily:'Georgia, serif'}} className="min-h-screen bg-white flex items-center justify-center p-8">
-      <div className="w-full max-w-sm">
-        <div className="border-b-2 border-black pb-6 mb-8">
-          <div className="text-xs font-bold tracking-[0.3em] text-black uppercase mb-2">Operative1</div>
-          <div className="text-xs tracking-widest text-gray-500 uppercase">Autonomous Reply Engine</div>
+    <div className="min-h-screen flex items-center justify-center p-6" style={{background:'#f5f5f7'}}>
+      <div className="w-full max-w-[400px]">
+        <div className="text-center mb-10">
+          <div className="text-[13px] font-semibold tracking-[0.15em] uppercase text-[#6e6e73] mb-3">Operative1</div>
+          <h1 className="text-[28px] font-semibold text-[#1d1d1f] leading-tight">
+            {mode === 'login' ? 'Welcome back' : 'Get started'}
+          </h1>
+          <p className="text-[15px] text-[#6e6e73] mt-2">
+            {mode === 'login' ? 'Sign in to your account' : 'Create your account'}
+          </p>
         </div>
 
-        <h2 style={{fontFamily:'Georgia, serif'}} className="text-2xl font-normal text-black mb-8">
-          {mode === 'login' ? 'Sign in to continue' : 'Create your account'}
-        </h2>
-
-        <div className="space-y-5">
-          <div>
-            <label className="block text-xs tracking-widest uppercase text-gray-500 mb-2">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              className="w-full border border-black px-4 py-3 text-sm text-black bg-white focus:outline-none focus:ring-1 focus:ring-black"
-              placeholder="you@company.com"
-            />
+        <div className="bg-white rounded-2xl p-8" style={{boxShadow:'0 2px 20px rgba(0,0,0,0.08)'}}>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-[13px] font-medium text-[#1d1d1f] mb-1.5">Email</label>
+              <input
+                type="email" value={email} onChange={e => setEmail(e.target.value)}
+                placeholder="you@company.com"
+                className="w-full px-4 py-3 rounded-xl text-[15px] text-[#1d1d1f] outline-none transition-all"
+                style={{background:'#f5f5f7', border:'1.5px solid transparent'}}
+                onFocus={e => e.target.style.borderColor='#1d1d1f'}
+                onBlur={e => e.target.style.borderColor='transparent'}
+              />
+            </div>
+            <div>
+              <label className="block text-[13px] font-medium text-[#1d1d1f] mb-1.5">Password</label>
+              <input
+                type="password" value={password} onChange={e => setPassword(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+                placeholder="••••••••"
+                className="w-full px-4 py-3 rounded-xl text-[15px] text-[#1d1d1f] outline-none transition-all"
+                style={{background:'#f5f5f7', border:'1.5px solid transparent'}}
+                onFocus={e => e.target.style.borderColor='#1d1d1f'}
+                onBlur={e => e.target.style.borderColor='transparent'}
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-xs tracking-widest uppercase text-gray-500 mb-2">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-              className="w-full border border-black px-4 py-3 text-sm text-black bg-white focus:outline-none focus:ring-1 focus:ring-black"
-              placeholder="••••••••"
-            />
-          </div>
-        </div>
 
-        {error && <p className="text-xs text-black border-l-2 border-black pl-3 mt-4">{error}</p>}
+          {error && (
+            <div className="mt-4 px-4 py-3 rounded-xl bg-[#fff2f2] text-[13px] text-[#ff3b30]">{error}</div>
+          )}
 
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          className="w-full mt-8 bg-black text-white text-xs tracking-widest uppercase py-4 hover:bg-gray-900 transition-colors disabled:opacity-40"
-        >
-          {loading ? 'Please wait...' : mode === 'login' ? 'Sign In' : 'Create Account'}
-        </button>
-
-        <p className="text-center text-xs text-gray-400 mt-6">
-          {mode === 'login' ? "No account? " : 'Have an account? '}
-          <button onClick={() => setMode(mode === 'login' ? 'signup' : 'login')} className="text-black underline">
-            {mode === 'login' ? 'Sign up' : 'Sign in'}
+          <button
+            onClick={handleSubmit} disabled={loading}
+            className="w-full mt-6 py-3.5 rounded-xl text-[15px] font-semibold text-white transition-opacity disabled:opacity-50"
+            style={{background:'#1d1d1f'}}
+          >
+            {loading ? 'Please wait…' : mode === 'login' ? 'Sign In' : 'Create Account'}
           </button>
-        </p>
+
+          <p className="text-center text-[13px] text-[#6e6e73] mt-5">
+            {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
+            <button onClick={() => setMode(mode === 'login' ? 'signup' : 'login')} className="text-[#1d1d1f] font-medium hover:underline">
+              {mode === 'login' ? 'Sign up' : 'Sign in'}
+            </button>
+          </p>
+        </div>
       </div>
     </div>
   )

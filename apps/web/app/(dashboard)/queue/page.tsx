@@ -1,21 +1,15 @@
 'use client'
-
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
 type QueueItem = {
-  id: string
-  platform: string
-  original_content: string
-  original_url: string
-  original_author: string
-  draft_reply: string
-  edited_reply: string | null
-  confidence_score: number
-  relevance_score: number
-  mentions_product: boolean
-  status: string
-  created_at: string
+  id: string; platform: string; original_content: string; original_url: string
+  original_author: string; draft_reply: string; edited_reply: string | null
+  confidence_score: number; mentions_product: boolean; status: string
+}
+
+const platformColors: Record<string, string> = {
+  twitter: '#000000', reddit: '#ff4500', linkedin: '#0077b5', hn: '#ff6600'
 }
 
 export default function QueuePage() {
@@ -27,129 +21,124 @@ export default function QueuePage() {
 
   useEffect(() => {
     fetchQueue()
-    const channel = supabase
-      .channel('queue_changes')
+    const channel = supabase.channel('queue_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reply_queue' }, fetchQueue)
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [])
 
   async function fetchQueue() {
-    const { data } = await supabase
-      .from('reply_queue')
-      .select('*')
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false })
-    setItems(data || [])
-    setLoading(false)
+    const { data } = await supabase.from('reply_queue').select('*').eq('status', 'pending').order('created_at', { ascending: false })
+    setItems(data || []); setLoading(false)
   }
 
   async function approve(item: QueueItem) {
     setActionLoading(item.id)
-    const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    await fetch(`${API}/queue/${item.id}/approve`, { method: 'POST' })
-    await fetchQueue()
-    setActionLoading(null)
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/queue/${item.id}/approve`, { method: 'POST' })
+    await fetchQueue(); setActionLoading(null)
   }
 
   async function reject(id: string) {
     setActionLoading(id)
-    const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    await fetch(`${API}/queue/${id}/reject`, { method: 'POST' })
-    await fetchQueue()
-    setActionLoading(null)
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/queue/${id}/reject`, { method: 'POST' })
+    await fetchQueue(); setActionLoading(null)
   }
 
   async function saveEdit(id: string) {
     setActionLoading(id)
-    const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    await fetch(`${API}/queue/${id}/edit?edited_reply=${encodeURIComponent(editText)}`, { method: 'PATCH' })
-    setEditingId(null)
-    await fetchQueue()
-    setActionLoading(null)
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/queue/${id}/edit?edited_reply=${encodeURIComponent(editText)}`, { method: 'PATCH' })
+    setEditingId(null); await fetchQueue(); setActionLoading(null)
   }
 
-  if (loading) return (
-    <div style={{fontFamily:'Georgia, serif'}} className="flex items-center justify-center h-64 text-xs tracking-widest uppercase text-gray-400">
-      Loading...
-    </div>
-  )
+  if (loading) return <div className="flex items-center justify-center h-64 text-[14px] text-[#6e6e73]">Loading…</div>
 
   return (
-    <div style={{fontFamily:'Georgia, serif'}} className="max-w-3xl">
-      <div className="border-b-2 border-black pb-6 mb-10 flex items-end justify-between">
+    <div className="max-w-[720px]">
+      <div className="flex items-end justify-between mb-10">
         <div>
-          <h1 className="text-3xl font-normal text-black">Reply Queue</h1>
-          <p className="text-xs tracking-widest uppercase text-gray-400 mt-2">{items.length} pending {items.length === 1 ? 'reply' : 'replies'}</p>
+          <h1 className="text-[32px] font-semibold text-[#1d1d1f] leading-none">Reply Queue</h1>
+          <p className="text-[15px] text-[#6e6e73] mt-2">{items.length} pending {items.length === 1 ? 'reply' : 'replies'}</p>
         </div>
-        <button onClick={fetchQueue} className="text-xs tracking-widest uppercase text-gray-400 hover:text-black border border-gray-300 hover:border-black px-4 py-2 transition-colors">
+        <button onClick={fetchQueue} className="text-[13px] font-medium text-[#6e6e73] hover:text-[#1d1d1f] px-4 py-2 rounded-lg hover:bg-[#f5f5f7] transition-colors">
           Refresh
         </button>
       </div>
 
       {items.length === 0 && (
-        <div className="text-center py-32 border border-dashed border-gray-300">
-          <p className="text-xs tracking-widest uppercase text-gray-400">Queue is empty</p>
-          <p className="text-xs text-gray-300 mt-2">New replies appear automatically</p>
+        <div className="flex flex-col items-center justify-center py-32 rounded-2xl" style={{background:'#f5f5f7'}}>
+          <div className="text-4xl mb-4">✓</div>
+          <p className="text-[15px] font-medium text-[#1d1d1f]">Queue is empty</p>
+          <p className="text-[13px] text-[#6e6e73] mt-1">New replies will appear here automatically</p>
         </div>
       )}
 
-      <div className="space-y-8">
+      <div className="space-y-5">
         {items.map(item => (
-          <div key={item.id} className="border border-black">
-            <div className="flex items-center justify-between px-6 py-3 border-b border-black bg-gray-50">
-              <div className="flex items-center gap-4">
-                <span className="text-xs font-bold tracking-widest uppercase">{item.platform}</span>
-                <span className="text-xs text-gray-400">@{item.original_author}</span>
+          <div key={item.id} className="rounded-2xl border border-[#d1d1d6] overflow-hidden bg-white" style={{boxShadow:'0 1px 8px rgba(0,0,0,0.06)'}}>
+            <div className="flex items-center justify-between px-6 py-3.5 border-b border-[#f5f5f7]" style={{background:'#fafafa'}}>
+              <div className="flex items-center gap-3">
+                <span className="text-[12px] font-semibold px-2.5 py-1 rounded-full text-white" style={{background: platformColors[item.platform] || '#1d1d1f'}}>
+                  {item.platform}
+                </span>
+                <span className="text-[13px] text-[#6e6e73]">@{item.original_author}</span>
               </div>
-              <div className="flex items-center gap-4 text-xs text-gray-400">
-                <span>Confidence: <span className="text-black font-bold">{Math.round((item.confidence_score || 0) * 100)}%</span></span>
-                {item.mentions_product && <span className="border border-black px-2 py-0.5 text-black text-xs tracking-wider uppercase">Mentions product</span>}
+              <div className="flex items-center gap-3">
+                <span className="text-[13px] text-[#6e6e73]">
+                  Confidence <span className="font-semibold text-[#1d1d1f]">{Math.round((item.confidence_score || 0) * 100)}%</span>
+                </span>
+                {item.mentions_product && (
+                  <span className="text-[11px] font-medium px-2.5 py-1 rounded-full text-[#1d1d1f]" style={{background:'#f5f5f7'}}>
+                    mentions product
+                  </span>
+                )}
               </div>
             </div>
 
-            <div className="px-6 py-5 border-b border-gray-200">
-              <div className="text-xs tracking-widest uppercase text-gray-400 mb-3">Original Post</div>
-              <p className="text-sm text-black leading-relaxed">{item.original_content}</p>
+            <div className="px-6 py-5 border-b border-[#f5f5f7]">
+              <div className="text-[11px] font-semibold tracking-widest uppercase text-[#aeaeb2] mb-2.5">Original Post</div>
+              <p className="text-[14px] text-[#1d1d1f] leading-relaxed">{item.original_content}</p>
               {item.original_url && (
-                <a href={item.original_url} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-400 hover:text-black underline mt-2 block">
+                <a href={item.original_url} target="_blank" rel="noopener noreferrer" className="text-[13px] text-[#6e6e73] hover:text-[#1d1d1f] mt-2 inline-block hover:underline">
                   View original →
                 </a>
               )}
             </div>
 
             <div className="px-6 py-5">
-              <div className="text-xs tracking-widest uppercase text-gray-400 mb-3">Draft Reply</div>
+              <div className="text-[11px] font-semibold tracking-widest uppercase text-[#aeaeb2] mb-2.5">Draft Reply</div>
               {editingId === item.id ? (
                 <div>
-                  <textarea
-                    value={editText}
-                    onChange={e => setEditText(e.target.value)}
-                    className="w-full text-sm border border-black p-4 focus:outline-none resize-none bg-white"
-                    rows={4}
-                  />
-                  <div className="flex gap-3 mt-3">
-                    <button onClick={() => saveEdit(item.id)} disabled={actionLoading === item.id} className="text-xs tracking-widest uppercase bg-black text-white px-6 py-2 hover:bg-gray-900 disabled:opacity-40">Save</button>
-                    <button onClick={() => setEditingId(null)} className="text-xs tracking-widest uppercase border border-black px-6 py-2 hover:bg-gray-50">Cancel</button>
+                  <textarea value={editText} onChange={e => setEditText(e.target.value)}
+                    className="w-full text-[14px] border border-[#d1d1d6] rounded-xl px-4 py-3.5 focus:outline-none focus:border-[#1d1d1f] resize-none transition-colors"
+                    rows={4} />
+                  <div className="flex gap-2.5 mt-3">
+                    <button onClick={() => saveEdit(item.id)} disabled={actionLoading === item.id}
+                      className="text-[13px] font-semibold bg-[#1d1d1f] text-white px-5 py-2 rounded-lg hover:bg-black disabled:opacity-40 transition-colors">Save</button>
+                    <button onClick={() => setEditingId(null)}
+                      className="text-[13px] font-medium text-[#6e6e73] px-5 py-2 rounded-lg border border-[#d1d1d6] hover:bg-[#f5f5f7] transition-colors">Cancel</button>
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-black leading-relaxed">
+                <p className="text-[14px] text-[#1d1d1f] leading-relaxed">
                   {item.edited_reply || item.draft_reply}
-                  {item.edited_reply && <span className="ml-2 text-xs text-gray-400 uppercase tracking-wider">(edited)</span>}
+                  {item.edited_reply && <span className="ml-2 text-[12px] text-[#6e6e73]">(edited)</span>}
                 </p>
               )}
             </div>
 
             {editingId !== item.id && (
-              <div className="flex items-center gap-px border-t border-black">
-                <button onClick={() => approve(item)} disabled={actionLoading === item.id} className="flex-1 bg-black text-white text-xs tracking-widest uppercase py-3 hover:bg-gray-900 disabled:opacity-40 transition-colors">
+              <div className="flex gap-2.5 px-6 py-4 border-t border-[#f5f5f7]" style={{background:'#fafafa'}}>
+                <button onClick={() => approve(item)} disabled={actionLoading === item.id}
+                  className="flex-1 py-2.5 rounded-xl text-[14px] font-semibold text-white transition-opacity disabled:opacity-40"
+                  style={{background:'#1d1d1f'}}>
                   Approve & Post
                 </button>
-                <button onClick={() => { setEditingId(item.id); setEditText(item.edited_reply || item.draft_reply) }} className="flex-1 border-l border-black bg-white text-black text-xs tracking-widest uppercase py-3 hover:bg-gray-50 transition-colors">
+                <button onClick={() => { setEditingId(item.id); setEditText(item.edited_reply || item.draft_reply) }}
+                  className="px-6 py-2.5 rounded-xl text-[14px] font-medium text-[#1d1d1f] border border-[#d1d1d6] hover:bg-white transition-colors">
                   Edit
                 </button>
-                <button onClick={() => reject(item.id)} disabled={actionLoading === item.id} className="flex-1 border-l border-black bg-white text-black text-xs tracking-widest uppercase py-3 hover:bg-gray-50 disabled:opacity-40 transition-colors">
+                <button onClick={() => reject(item.id)} disabled={actionLoading === item.id}
+                  className="px-6 py-2.5 rounded-xl text-[14px] font-medium text-[#ff3b30] border border-[#ffd7d5] hover:bg-[#fff5f5] disabled:opacity-40 transition-colors">
                   Reject
                 </button>
               </div>
