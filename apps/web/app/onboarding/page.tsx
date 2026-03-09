@@ -25,11 +25,11 @@ export default function OnboardingPage() {
     const history = [...messages, { role: 'user' as const, content: userMsg }]
     setMessages(history); setLoading(true)
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+    const res = await fetch(`${API}/onboarding/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514', max_tokens: 1000,
         system: `You are an onboarding assistant for Operative1. Gather product info conversationally (one question at a time): name, description, value prop, target audience, platforms (Twitter/Reddit/LinkedIn/HN), tone. After 3-4 exchanges respond ONLY with this JSON: {"ready":true,"config":{"name":"","slug":"","description":"","value_prop":"","system_prompt":"","keywords":{"twitter":[],"reddit":[],"hn":[],"linkedin":[]},"tone":"","target_subreddits":[]}}. Be warm and brief until then.`,
         messages: history.map(m => ({ role: m.role, content: m.content }))
       })
