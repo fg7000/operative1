@@ -37,11 +37,29 @@ export default function OnboardingPage() {
     const data = await res.json()
     const content = data.content[0].text
     try {
-      const parsed = JSON.parse(content)
+      // Strip markdown code fences if present (e.g. ```json ... ```)
+      let jsonContent = content
+      if (content.includes('```')) {
+        jsonContent = content
+          .split('\n')
+          .filter((line: string) => !line.trim().startsWith('```'))
+          .join('\n')
+          .trim()
+      }
+      const parsed = JSON.parse(jsonContent)
       if (parsed.ready && parsed.config) {
-        setProductConfig(parsed.config)
-        setMessages(prev => [...prev, { role: 'assistant', content: `All set. I've configured ${parsed.config.name} with tailored keywords and brand voice.\n\nReady to launch?` }])
-        setDone(true); setLoading(false); return
+        const config = parsed.config
+        setProductConfig(config)
+        // Build a friendly confirmation message
+        const keywordCount = Object.values(config.keywords || {}).flat().length
+        const tone = config.tone || 'professional'
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `All set! I've configured ${config.name} with ${keywordCount} keywords and a ${tone} tone.\n\nReady to launch?`
+        }])
+        setDone(true)
+        setLoading(false)
+        return
       }
     } catch {}
     setMessages(prev => [...prev, { role: 'assistant', content: content }])
