@@ -8,9 +8,7 @@ type QueueItem = {
   confidence_score: number; mentions_product: boolean; status: string
 }
 
-const platformColors: Record<string, string> = {
-  twitter: '#000000', reddit: '#ff4500', linkedin: '#0077b5', hn: '#ff6600'
-}
+const platformColor: Record<string,string> = { twitter:'#000', reddit:'#ff4500', linkedin:'#0077b5', hn:'#ff6600' }
 
 export default function QueuePage() {
   const [items, setItems] = useState<QueueItem[]>([])
@@ -21,124 +19,93 @@ export default function QueuePage() {
 
   useEffect(() => {
     fetchQueue()
-    const channel = supabase.channel('queue_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reply_queue' }, fetchQueue)
-      .subscribe()
+    const channel = supabase.channel('queue').on('postgres_changes',{event:'*',schema:'public',table:'reply_queue'},fetchQueue).subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [])
 
   async function fetchQueue() {
-    const { data } = await supabase.from('reply_queue').select('*').eq('status', 'pending').order('created_at', { ascending: false })
-    setItems(data || []); setLoading(false)
+    const { data } = await supabase.from('reply_queue').select('*').eq('status','pending').order('created_at',{ascending:false})
+    setItems(data||[]); setLoading(false)
   }
 
-  async function approve(item: QueueItem) {
-    setActionLoading(item.id)
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/queue/${item.id}/approve`, { method: 'POST' })
-    await fetchQueue(); setActionLoading(null)
-  }
+  const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+  async function approve(item: QueueItem) { setActionLoading(item.id); await fetch(`${API}/queue/${item.id}/approve`,{method:'POST'}); await fetchQueue(); setActionLoading(null) }
+  async function reject(id: string) { setActionLoading(id); await fetch(`${API}/queue/${id}/reject`,{method:'POST'}); await fetchQueue(); setActionLoading(null) }
+  async function saveEdit(id: string) { setActionLoading(id); await fetch(`${API}/queue/${id}/edit?edited_reply=${encodeURIComponent(editText)}`,{method:'PATCH'}); setEditingId(null); await fetchQueue(); setActionLoading(null) }
 
-  async function reject(id: string) {
-    setActionLoading(id)
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/queue/${id}/reject`, { method: 'POST' })
-    await fetchQueue(); setActionLoading(null)
-  }
-
-  async function saveEdit(id: string) {
-    setActionLoading(id)
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/queue/${id}/edit?edited_reply=${encodeURIComponent(editText)}`, { method: 'PATCH' })
-    setEditingId(null); await fetchQueue(); setActionLoading(null)
-  }
-
-  if (loading) return <div className="flex items-center justify-center h-64 text-[14px] text-[#6e6e73]">Loading…</div>
+  if (loading) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'200px',color:'#999',fontSize:'14px'}}>Loading…</div>
 
   return (
-    <div className="max-w-[720px]">
-      <div className="flex items-end justify-between mb-10">
+    <div style={{maxWidth:'680px'}}>
+      <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:'32px'}}>
         <div>
-          <h1 className="text-[32px] font-semibold text-[#1d1d1f] leading-none">Reply Queue</h1>
-          <p className="text-[15px] text-[#6e6e73] mt-2">{items.length} pending {items.length === 1 ? 'reply' : 'replies'}</p>
+          <h1 style={{fontSize:'28px',fontWeight:600,color:'#111',lineHeight:1}}>Reply Queue</h1>
+          <p style={{fontSize:'14px',color:'#999',marginTop:'6px'}}>{items.length} pending {items.length===1?'reply':'replies'}</p>
         </div>
-        <button onClick={fetchQueue} className="text-[13px] font-medium text-[#6e6e73] hover:text-[#1d1d1f] px-4 py-2 rounded-lg hover:bg-[#f5f5f7] transition-colors">
-          Refresh
-        </button>
+        <button onClick={fetchQueue} style={{fontSize:'13px',color:'#666',background:'#f5f5f5',border:'none',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500}}>Refresh</button>
       </div>
 
-      {items.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-32 rounded-2xl" style={{background:'#f5f5f7'}}>
-          <div className="text-4xl mb-4">✓</div>
-          <p className="text-[15px] font-medium text-[#1d1d1f]">Queue is empty</p>
-          <p className="text-[13px] text-[#6e6e73] mt-1">New replies will appear here automatically</p>
+      {items.length===0 && (
+        <div style={{textAlign:'center',padding:'80px 40px',background:'#fafafa',borderRadius:'16px',border:'1px solid #e8e8e8'}}>
+          <div style={{fontSize:'32px',marginBottom:'12px'}}>✓</div>
+          <p style={{fontSize:'15px',fontWeight:500,color:'#111'}}>Queue is empty</p>
+          <p style={{fontSize:'13px',color:'#999',marginTop:'4px'}}>New replies appear automatically</p>
         </div>
       )}
 
-      <div className="space-y-5">
+      <div style={{display:'flex',flexDirection:'column',gap:'16px'}}>
         {items.map(item => (
-          <div key={item.id} className="rounded-2xl border border-[#d1d1d6] overflow-hidden bg-white" style={{boxShadow:'0 1px 8px rgba(0,0,0,0.06)'}}>
-            <div className="flex items-center justify-between px-6 py-3.5 border-b border-[#f5f5f7]" style={{background:'#fafafa'}}>
-              <div className="flex items-center gap-3">
-                <span className="text-[12px] font-semibold px-2.5 py-1 rounded-full text-white" style={{background: platformColors[item.platform] || '#1d1d1f'}}>
-                  {item.platform}
-                </span>
-                <span className="text-[13px] text-[#6e6e73]">@{item.original_author}</span>
+          <div key={item.id} style={{borderRadius:'16px',border:'1px solid #e8e8e8',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(0,0,0,0.05)'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'#fafafa',borderBottom:'1px solid #f0f0f0'}}>
+              <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+                <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',color:'#fff',background:platformColor[item.platform]||'#111',textTransform:'uppercase',letterSpacing:'0.05em'}}>{item.platform}</span>
+                <span style={{fontSize:'13px',color:'#999'}}>@{item.original_author}</span>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="text-[13px] text-[#6e6e73]">
-                  Confidence <span className="font-semibold text-[#1d1d1f]">{Math.round((item.confidence_score || 0) * 100)}%</span>
-                </span>
-                {item.mentions_product && (
-                  <span className="text-[11px] font-medium px-2.5 py-1 rounded-full text-[#1d1d1f]" style={{background:'#f5f5f7'}}>
-                    mentions product
-                  </span>
-                )}
+              <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+                <span style={{fontSize:'13px',color:'#999'}}>Confidence <strong style={{color:'#111'}}>{Math.round((item.confidence_score||0)*100)}%</strong></span>
+                {item.mentions_product && <span style={{fontSize:'11px',fontWeight:500,padding:'3px 10px',borderRadius:'20px',background:'#f0f0f0',color:'#555'}}>mentions product</span>}
               </div>
             </div>
 
-            <div className="px-6 py-5 border-b border-[#f5f5f7]">
-              <div className="text-[11px] font-semibold tracking-widest uppercase text-[#aeaeb2] mb-2.5">Original Post</div>
-              <p className="text-[14px] text-[#1d1d1f] leading-relaxed">{item.original_content}</p>
-              {item.original_url && (
-                <a href={item.original_url} target="_blank" rel="noopener noreferrer" className="text-[13px] text-[#6e6e73] hover:text-[#1d1d1f] mt-2 inline-block hover:underline">
-                  View original →
-                </a>
-              )}
+            <div style={{padding:'16px 20px',borderBottom:'1px solid #f5f5f5'}}>
+              <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'8px'}}>Original Post</div>
+              <p style={{fontSize:'14px',color:'#111',lineHeight:1.6}}>{item.original_content}</p>
+              {item.original_url && <a href={item.original_url} target="_blank" rel="noopener noreferrer" style={{fontSize:'13px',color:'#999',marginTop:'6px',display:'inline-block'}}>View original →</a>}
             </div>
 
-            <div className="px-6 py-5">
-              <div className="text-[11px] font-semibold tracking-widest uppercase text-[#aeaeb2] mb-2.5">Draft Reply</div>
-              {editingId === item.id ? (
+            <div style={{padding:'16px 20px'}}>
+              <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'8px'}}>Draft Reply</div>
+              {editingId===item.id ? (
                 <div>
-                  <textarea value={editText} onChange={e => setEditText(e.target.value)}
-                    className="w-full text-[14px] border border-[#d1d1d6] rounded-xl px-4 py-3.5 focus:outline-none focus:border-[#1d1d1f] resize-none transition-colors"
-                    rows={4} />
-                  <div className="flex gap-2.5 mt-3">
-                    <button onClick={() => saveEdit(item.id)} disabled={actionLoading === item.id}
-                      className="text-[13px] font-semibold bg-[#1d1d1f] text-white px-5 py-2 rounded-lg hover:bg-black disabled:opacity-40 transition-colors">Save</button>
-                    <button onClick={() => setEditingId(null)}
-                      className="text-[13px] font-medium text-[#6e6e73] px-5 py-2 rounded-lg border border-[#d1d1d6] hover:bg-[#f5f5f7] transition-colors">Cancel</button>
+                  <textarea value={editText} onChange={e=>setEditText(e.target.value)} rows={4}
+                    style={{width:'100%',padding:'12px 14px',borderRadius:'10px',border:'1px solid #e0e0e0',fontSize:'14px',color:'#111',resize:'none',outline:'none',fontFamily:'inherit'}}
+                    onFocus={e=>e.target.style.borderColor='#111'} onBlur={e=>e.target.style.borderColor='#e0e0e0'}
+                  />
+                  <div style={{display:'flex',gap:'8px',marginTop:'10px'}}>
+                    <button onClick={()=>saveEdit(item.id)} disabled={actionLoading===item.id} style={{padding:'8px 18px',borderRadius:'8px',background:'#111',color:'#fff',fontSize:'13px',fontWeight:600,border:'none',cursor:'pointer',opacity:actionLoading===item.id?0.5:1}}>Save</button>
+                    <button onClick={()=>setEditingId(null)} style={{padding:'8px 18px',borderRadius:'8px',background:'#f5f5f5',color:'#555',fontSize:'13px',fontWeight:500,border:'none',cursor:'pointer'}}>Cancel</button>
                   </div>
                 </div>
               ) : (
-                <p className="text-[14px] text-[#1d1d1f] leading-relaxed">
-                  {item.edited_reply || item.draft_reply}
-                  {item.edited_reply && <span className="ml-2 text-[12px] text-[#6e6e73]">(edited)</span>}
+                <p style={{fontSize:'14px',color:'#111',lineHeight:1.6}}>
+                  {item.edited_reply||item.draft_reply}
+                  {item.edited_reply && <span style={{marginLeft:'8px',fontSize:'12px',color:'#999'}}>(edited)</span>}
                 </p>
               )}
             </div>
 
-            {editingId !== item.id && (
-              <div className="flex gap-2.5 px-6 py-4 border-t border-[#f5f5f7]" style={{background:'#fafafa'}}>
-                <button onClick={() => approve(item)} disabled={actionLoading === item.id}
-                  className="flex-1 py-2.5 rounded-xl text-[14px] font-semibold text-white transition-opacity disabled:opacity-40"
-                  style={{background:'#1d1d1f'}}>
+            {editingId!==item.id && (
+              <div style={{display:'flex',gap:'8px',padding:'12px 20px',background:'#fafafa',borderTop:'1px solid #f0f0f0'}}>
+                <button onClick={()=>approve(item)} disabled={actionLoading===item.id}
+                  style={{flex:1,padding:'10px',borderRadius:'10px',background:'#111',color:'#fff',fontSize:'13px',fontWeight:600,border:'none',cursor:'pointer',opacity:actionLoading===item.id?0.5:1}}>
                   Approve & Post
                 </button>
-                <button onClick={() => { setEditingId(item.id); setEditText(item.edited_reply || item.draft_reply) }}
-                  className="px-6 py-2.5 rounded-xl text-[14px] font-medium text-[#1d1d1f] border border-[#d1d1d6] hover:bg-white transition-colors">
+                <button onClick={()=>{setEditingId(item.id);setEditText(item.edited_reply||item.draft_reply)}}
+                  style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#111',fontSize:'13px',fontWeight:500,border:'1px solid #e0e0e0',cursor:'pointer'}}>
                   Edit
                 </button>
-                <button onClick={() => reject(item.id)} disabled={actionLoading === item.id}
-                  className="px-6 py-2.5 rounded-xl text-[14px] font-medium text-[#ff3b30] border border-[#ffd7d5] hover:bg-[#fff5f5] disabled:opacity-40 transition-colors">
+                <button onClick={()=>reject(item.id)} disabled={actionLoading===item.id}
+                  style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#e53e3e',fontSize:'13px',fontWeight:500,border:'1px solid #ffd7d7',cursor:'pointer',opacity:actionLoading===item.id?0.5:1}}>
                   Reject
                 </button>
               </div>
