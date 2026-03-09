@@ -1,0 +1,10 @@
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+supabase==2.4.6
+praw==7.7.1
+httpx==0.27.0
+python-dotenv==1.0.1
+pydantic==2.7.1
+pydantic-settings==2.2.1
+apscheduler==3.10.4
+tweepy==4.14.0
