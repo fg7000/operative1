@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase-client'
 
 const nav = [
@@ -16,10 +16,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
+  const [authed, setAuthed] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) router.push('/login')
+      else setAuthed(true)
     })
   }, [])
 
@@ -27,6 +29,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     await supabase.auth.signOut()
     router.push('/login')
   }
+
+  if (!authed) return null
 
   return (
     <div style={{display:'flex',height:'100vh',background:'#fff'}}>
