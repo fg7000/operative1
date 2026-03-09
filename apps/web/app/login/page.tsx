@@ -11,7 +11,7 @@ export default function LoginPage() {
     setLoading(true); setError('')
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: 'https://operative1.vercel.app/queue' }
+      options: { redirectTo: 'https://operative1.vercel.app/' }
     })
     if (error) { setError(error.message); setLoading(false) }
   }

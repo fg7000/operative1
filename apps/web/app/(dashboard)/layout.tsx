@@ -19,10 +19,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [authed, setAuthed] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) router.push('/login')
-      else setAuthed(true)
-    })
+    async function check() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { router.push('/login'); return }
+
+      const { count } = await supabase
+        .from('products')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', session.user.id)
+
+      if (!count || count === 0) { router.push('/onboarding'); return }
+      setAuthed(true)
+    }
+    check()
   }, [])
 
   async function signOut() {
