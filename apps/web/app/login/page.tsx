@@ -29,35 +29,57 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white">Operative1</h1>
-          <p className="text-gray-400 mt-2">Autonomous reply marketing engine</p>
+    <div style={{fontFamily:'Georgia, serif'}} className="min-h-screen bg-white flex items-center justify-center p-8">
+      <div className="w-full max-w-sm">
+        <div className="border-b-2 border-black pb-6 mb-8">
+          <div className="text-xs font-bold tracking-[0.3em] text-black uppercase mb-2">Operative1</div>
+          <div className="text-xs tracking-widest text-gray-500 uppercase">Autonomous Reply Engine</div>
         </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8">
-          <h2 className="text-xl font-semibold text-white mb-6">{mode === 'login' ? 'Sign in' : 'Create account'}</h2>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm text-gray-400 block mb-1.5">Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500" placeholder="you@company.com" />
-            </div>
-            <div>
-              <label className="text-sm text-gray-400 block mb-1.5">Password</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSubmit()} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500" placeholder="••••••••" />
-            </div>
+
+        <h2 style={{fontFamily:'Georgia, serif'}} className="text-2xl font-normal text-black mb-8">
+          {mode === 'login' ? 'Sign in to continue' : 'Create your account'}
+        </h2>
+
+        <div className="space-y-5">
+          <div>
+            <label className="block text-xs tracking-widest uppercase text-gray-500 mb-2">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="w-full border border-black px-4 py-3 text-sm text-black bg-white focus:outline-none focus:ring-1 focus:ring-black"
+              placeholder="you@company.com"
+            />
           </div>
-          {error && <p className="text-red-400 text-sm mt-4">{error}</p>}
-          <button onClick={handleSubmit} disabled={loading} className="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-50">
-            {loading ? 'Please wait...' : mode === 'login' ? 'Sign in' : 'Create account'}
-          </button>
-          <p className="text-center text-sm text-gray-500 mt-4">
-            {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
-            <button onClick={() => setMode(mode === 'login' ? 'signup' : 'login')} className="text-blue-400 hover:text-blue-300">
-              {mode === 'login' ? 'Sign up' : 'Sign in'}
-            </button>
-          </p>
+          <div>
+            <label className="block text-xs tracking-widest uppercase text-gray-500 mb-2">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+              className="w-full border border-black px-4 py-3 text-sm text-black bg-white focus:outline-none focus:ring-1 focus:ring-black"
+              placeholder="••••••••"
+            />
+          </div>
         </div>
+
+        {error && <p className="text-xs text-black border-l-2 border-black pl-3 mt-4">{error}</p>}
+
+        <button
+          onClick={handleSubmit}
+          disabled={loading}
+          className="w-full mt-8 bg-black text-white text-xs tracking-widest uppercase py-4 hover:bg-gray-900 transition-colors disabled:opacity-40"
+        >
+          {loading ? 'Please wait...' : mode === 'login' ? 'Sign In' : 'Create Account'}
+        </button>
+
+        <p className="text-center text-xs text-gray-400 mt-6">
+          {mode === 'login' ? "No account? " : 'Have an account? '}
+          <button onClick={() => setMode(mode === 'login' ? 'signup' : 'login')} className="text-black underline">
+            {mode === 'login' ? 'Sign up' : 'Sign in'}
+          </button>
+        </p>
       </div>
     </div>
   )

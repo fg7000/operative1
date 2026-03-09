@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 
 type Message = { role: 'assistant' | 'user', content: string }
 
-const INITIAL_MESSAGE = `Welcome to Operative1! I'll help you set up your first product in about 2 minutes.\n\nLet's start: What's your product called, and what does it do? Just describe it naturally.`
+const INITIAL_MESSAGE = `Welcome to Operative1.\n\nLet's configure your first product. Tell me what it is and what it does — describe it naturally, as you would to a colleague.`
 
 export default function OnboardingPage() {
   const [messages, setMessages] = useState<Message[]>([{ role: 'assistant', content: INITIAL_MESSAGE }])
@@ -55,7 +55,7 @@ Until then respond conversationally. Be friendly and brief.`,
       const parsed = JSON.parse(content)
       if (parsed.ready && parsed.config) {
         setProductConfig(parsed.config)
-        setMessages(prev => [...prev, { role: 'assistant', content: `Perfect! I have everything I need for **${parsed.config.name}**.\n\nHere's what I configured:\n- Keywords: ${parsed.config.keywords.twitter.slice(0,3).join(', ')} and more\n- Tone: ${parsed.config.tone}\n- Platforms: Twitter, Reddit, HN, LinkedIn\n\nHit Launch to start monitoring, or tell me what to change.` }])
+        setMessages(prev => [...prev, { role: 'assistant', content: `Configuration ready for ${parsed.config.name}.\n\nKeywords: ${parsed.config.keywords.twitter.slice(0,3).join(', ')} and more\nTone: ${parsed.config.tone}\nPlatforms: Twitter, Reddit, HN, LinkedIn\n\nReview above and hit Launch, or tell me what to adjust.` }])
         setDone(true)
         setLoading(false)
         return
@@ -82,46 +82,58 @@ Until then respond conversationally. Be friendly and brief.`,
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col">
-      <div className="border-b border-gray-800 px-6 py-4">
-        <h1 className="text-white font-semibold">Operative1 — Product Setup</h1>
+    <div style={{fontFamily:'Georgia, serif'}} className="min-h-screen bg-white flex flex-col">
+      <div className="border-b-2 border-black px-8 py-5 flex items-center justify-between">
+        <div className="text-xs font-bold tracking-[0.3em] uppercase">Operative1</div>
+        <div className="text-xs tracking-widest uppercase text-gray-400">Product Setup</div>
       </div>
-      <div className="flex-1 overflow-auto px-4 py-6 max-w-2xl mx-auto w-full">
-        <div className="space-y-4">
+
+      <div className="flex-1 overflow-auto px-8 py-8 max-w-2xl mx-auto w-full">
+        <div className="space-y-6">
           {messages.map((m, i) => (
             <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-lg rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-100'}`}>
+              <div className={`max-w-lg text-sm leading-relaxed whitespace-pre-wrap px-5 py-4 ${
+                m.role === 'user'
+                  ? 'bg-black text-white'
+                  : 'bg-white text-black border border-black'
+              }`}>
                 {m.content}
               </div>
             </div>
           ))}
           {loading && (
             <div className="flex justify-start">
-              <div className="bg-gray-800 rounded-2xl px-4 py-3">
-                <div className="flex gap-1">
-                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay:'0ms'}}/>
-                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay:'150ms'}}/>
-                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay:'300ms'}}/>
-                </div>
+              <div className="border border-black px-5 py-4 text-xs tracking-widest text-gray-400 uppercase">
+                Thinking...
               </div>
             </div>
           )}
         </div>
       </div>
-      <div className="border-t border-gray-800 px-4 py-4 max-w-2xl mx-auto w-full">
+
+      <div className="border-t-2 border-black px-8 py-6 max-w-2xl mx-auto w-full">
         {done && productConfig ? (
           <div className="flex gap-3">
-            <button onClick={launchProduct} disabled={loading} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-3 rounded-xl transition-colors disabled:opacity-50">
+            <button onClick={launchProduct} disabled={loading} className="flex-1 bg-black text-white text-xs tracking-widest uppercase py-4 hover:bg-gray-900 transition-colors disabled:opacity-40">
               Launch {productConfig.name}
             </button>
-            <button onClick={() => setDone(false)} className="px-6 border border-gray-700 text-gray-400 rounded-xl hover:border-gray-600">
+            <button onClick={() => setDone(false)} className="px-6 border border-black text-black text-xs tracking-widest uppercase hover:bg-gray-50">
               Edit
             </button>
           </div>
         ) : (
           <div className="flex gap-3">
-            <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendMessage()} placeholder="Describe your product..." className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500" />
-            <button onClick={sendMessage} disabled={loading || !input.trim()} className="px-6 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors disabled:opacity-50">Send</button>
+            <input
+              type="text"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && sendMessage()}
+              placeholder="Describe your product..."
+              className="flex-1 border border-black px-4 py-3 text-sm text-black bg-white focus:outline-none focus:ring-1 focus:ring-black"
+            />
+            <button onClick={sendMessage} disabled={loading || !input.trim()} className="px-8 bg-black text-white text-xs tracking-widest uppercase hover:bg-gray-900 transition-colors disabled:opacity-40">
+              Send
+            </button>
           </div>
         )}
       </div>
