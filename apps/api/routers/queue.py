@@ -9,6 +9,12 @@ async def list_queue():
     res = supabase.table('reply_queue').select('*').order('created_at', desc=True).limit(20).execute()
     return res.data
 
+@router.get("/pending")
+async def list_pending():
+    from services.database import supabase
+    res = supabase.table('reply_queue').select('*').eq('status', 'pending').order('created_at', desc=True).execute()
+    return res.data
+
 @router.post("/test-twitter-pipeline")
 async def test_twitter_pipeline():
     await run_twitter_pipeline()

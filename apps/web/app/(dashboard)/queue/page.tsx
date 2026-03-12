@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
 
 type QueueItem = {
   id: string; platform: string; original_content: string; original_url: string
@@ -17,18 +16,15 @@ export default function QueuePage() {
   const [editText, setEditText] = useState('')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetchQueue()
-    const channel = supabase.channel('queue').on('postgres_changes',{event:'*',schema:'public',table:'reply_queue'},fetchQueue).subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [])
+  const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
+  useEffect(() => { fetchQueue() }, [])
 
   async function fetchQueue() {
-    const { data } = await supabase.from('reply_queue').select('*').eq('status','pending').order('created_at',{ascending:false})
+    const res = await fetch(`${API}/queue/pending`)
+    const data = await res.json()
     setItems(data||[]); setLoading(false)
   }
-
-  const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
   async function approve(item: QueueItem) { setActionLoading(item.id); await fetch(`${API}/queue/${item.id}/approve`,{method:'POST'}); await fetchQueue(); setActionLoading(null) }
   async function reject(id: string) { setActionLoading(id); await fetch(`${API}/queue/${id}/reject`,{method:'POST'}); await fetchQueue(); setActionLoading(null) }
   async function saveEdit(id: string) { setActionLoading(id); await fetch(`${API}/queue/${id}/edit?edited_reply=${encodeURIComponent(editText)}`,{method:'PATCH'}); setEditingId(null); await fetchQueue(); setActionLoading(null) }

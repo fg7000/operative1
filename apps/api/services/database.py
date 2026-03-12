@@ -27,6 +27,7 @@ async def mark_seen(platform: str, external_id: str, post: dict):
 async def insert_reply_queue(product: dict, post: dict, reply_data: dict, platform: str) -> str:
     res = supabase.table('reply_queue').insert({
         'product_id': product['id'],
+        'user_id': product.get('user_id'),
         'platform': platform,
         'original_content': post.get('text', ''),
         'original_url': post.get('url', ''),
