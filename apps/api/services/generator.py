@@ -29,7 +29,7 @@ MODE_INSTRUCTIONS = {
 }
 
 PLATFORM_LENGTH = {
-    'twitter': "Your reply MUST be 1-3 sentences maximum. Be punchy, direct, and conversational. No walls of text. Under 250 characters is ideal.",
+    'twitter': "Your reply MUST be under 200 characters to leave room for the @mention and tweet link. Be punchy, direct, and conversational. 1-2 sentences max.",
     'reddit': "Be detailed and technical, 2-4 paragraphs is fine.",
     'linkedin': "Professional but concise, 2-3 sentences.",
     'hn': "Technical and specific, 1-3 sentences.",

@@ -6,7 +6,7 @@ from services.apify import fetch_tweets
 from services.scoring import ai_context_score
 from services.generator import generate_reply
 from services.database import get_active_products, is_seen, mark_seen, insert_reply_queue, should_auto_post
-from services.poster import post_to_twitter
+from services.poster import post_to_twitter, check_tweet_reply_allowed
 from services.agent_prompts import TRANSLATOR_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,18 @@ async def run_twitter_pipeline():
             logger.info(f"Fetched {len(tweets)} tweets for {product.get('name')}")
             for tweet in tweets:
                 logger.info(f"Processing tweet {tweet.get('id')}: {tweet.get('text', '')[:60]}...")
+
+                # Skip tweets with reply restrictions BEFORE scoring (saves AI costs)
+                reply_settings = tweet.get('reply_settings', '')
+                if reply_settings and reply_settings.lower() not in ('everyone', 'all', ''):
+                    logger.info(f"Skipped tweet {tweet['id']} - replies restricted ({reply_settings})")
+                    continue
+                # Fallback: if Apify didn't provide reply_settings, check via Twitter API
+                if not reply_settings or reply_settings == '':
+                    if not check_tweet_reply_allowed(tweet['id']):
+                        logger.info(f"Skipped tweet {tweet['id']} - replies restricted (Twitter API check)")
+                        continue
+
                 if await is_seen('twitter', tweet['id']):
                     logger.info(f"Tweet {tweet['id']} already seen, skipping")
                     continue

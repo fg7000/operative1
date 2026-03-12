@@ -83,6 +83,19 @@ def _normalize_tweet(t: dict) -> dict | None:
         else t.get('username') or t.get('user', {}).get('screen_name') or ''
     )
 
+    # Check for reply restrictions - Apify may use various field names
+    reply_settings = (
+        t.get('reply_settings') or
+        t.get('replySettings') or
+        t.get('conversation_control') or
+        t.get('conversationControl') or
+        t.get('limited_actions', {}).get('reply') or
+        'everyone'  # default to everyone if not specified
+    )
+    # Normalize: could be dict or string
+    if isinstance(reply_settings, dict):
+        reply_settings = reply_settings.get('type', 'everyone')
+
     return {
         'id': tweet_id,
         'text': text,
@@ -90,7 +103,8 @@ def _normalize_tweet(t: dict) -> dict | None:
         'url': t.get('url') or t.get('tweetUrl') or f"https://twitter.com/i/web/status/{tweet_id}",
         'likes': t.get('likeCount') or t.get('favorite_count') or t.get('likes') or 0,
         'replies': t.get('replyCount') or t.get('reply_count') or t.get('replies') or 0,
-        'created_at': t.get('createdAt') or t.get('created_at') or ''
+        'created_at': t.get('createdAt') or t.get('created_at') or '',
+        'reply_settings': reply_settings
     }
 
 

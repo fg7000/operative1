@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">OPERATIVE1</div>
+      <div class="subtitle">Connect Twitter</div>
+    </div>
+
+    <div id="status-section" class="section hidden">
+      <div id="status-message" class="status"></div>
+    </div>
+
+    <div id="connect-section" class="section">
+      <p class="description">Connect your Twitter account to enable reply posting.</p>
+      <input type="email" id="email-input" placeholder="Your Operative1 email" class="input">
+      <button id="connect-btn" class="btn btn-primary">Connect Twitter</button>
+    </div>
+
+    <div id="success-section" class="section hidden">
+      <div class="success-icon">✓</div>
+      <div class="success-text">Connected!</div>
+      <p class="description">Your Twitter account is now linked to Operative1.</p>
+    </div>
+
+    <div id="error-section" class="section hidden">
+      <div class="error-icon">✕</div>
+      <div id="error-message" class="error-text"></div>
+    </div>
+
+    <div id="login-prompt" class="section hidden">
+      <p class="description">Please log into <a href="https://x.com" target="_blank">x.com</a> first, then try again.</p>
+      <button id="retry-btn" class="btn btn-secondary">Retry</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

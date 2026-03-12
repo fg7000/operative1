@@ -71,18 +71,43 @@ export default function QueuePage() {
       const res = await fetch(`${API}/queue/${item.id}/approve`, { method: 'POST' })
       const data = await res.json()
       if (data.status === 'failed') {
-        alert(`Failed to post: ${data.error || 'Unknown error'}`)
+        // Instead of alert, just remove from local state (it's now in Failed in DB)
+        setItems(prev => prev.filter(i => i.id !== item.id))
+        // Could show a non-blocking toast here in the future
       } else if (data.status === 'posted') {
-        // Success - could show a toast here
+        // Remove from local state without full refresh
+        setItems(prev => prev.filter(i => i.id !== item.id))
       }
     } catch (e) {
-      alert(`Network error: ${e}`)
+      console.error('Network error:', e)
     }
-    await fetchQueue()
     setActionLoading(null)
   }
-  async function reject(id: string) { setActionLoading(id); await fetch(`${API}/queue/${id}/reject`,{method:'POST'}); await fetchQueue(); setActionLoading(null) }
-  async function saveEdit(id: string) { setActionLoading(id); await fetch(`${API}/queue/${id}/edit?edited_reply=${encodeURIComponent(editText)}`,{method:'PATCH'}); setEditingId(null); await fetchQueue(); setActionLoading(null) }
+
+  async function reject(id: string) {
+    setActionLoading(id)
+    await fetch(`${API}/queue/${id}/reject`, { method: 'POST' })
+    setItems(prev => prev.filter(i => i.id !== id))
+    setActionLoading(null)
+  }
+
+  async function skip(id: string) {
+    // Move item to bottom of queue locally (doesn't change DB status)
+    setItems(prev => {
+      const item = prev.find(i => i.id === id)
+      if (!item) return prev
+      return [...prev.filter(i => i.id !== id), item]
+    })
+  }
+
+  async function saveEdit(id: string) {
+    setActionLoading(id)
+    await fetch(`${API}/queue/${id}/edit?edited_reply=${encodeURIComponent(editText)}`, { method: 'PATCH' })
+    setEditingId(null)
+    // Update local state instead of full refresh
+    setItems(prev => prev.map(i => i.id === id ? { ...i, edited_reply: editText } : i))
+    setActionLoading(null)
+  }
 
   if (loading) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'200px',color:'#999',fontSize:'14px'}}>Loading...</div>
 
@@ -204,6 +229,10 @@ export default function QueuePage() {
                 <button onClick={()=>{setEditingId(item.id);setEditText(item.edited_reply||item.draft_reply)}}
                   style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#111',fontSize:'13px',fontWeight:500,border:'1px solid #e0e0e0',cursor:'pointer'}}>
                   Edit
+                </button>
+                <button onClick={()=>skip(item.id)}
+                  style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#666',fontSize:'13px',fontWeight:500,border:'1px solid #e0e0e0',cursor:'pointer'}}>
+                  Skip
                 </button>
                 <button onClick={()=>reject(item.id)} disabled={actionLoading===item.id}
                   style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#e53e3e',fontSize:'13px',fontWeight:500,border:'1px solid #ffd7d7',cursor:'pointer',opacity:actionLoading===item.id?0.5:1}}>

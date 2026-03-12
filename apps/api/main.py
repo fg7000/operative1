@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from pipelines.scheduler import start_scheduler
-from routers import products, queue, posting, metrics, onboarding
+from routers import products, queue, posting, metrics, onboarding, settings
 import logging
 import os
 
@@ -66,6 +66,7 @@ app.include_router(queue.router, prefix="/queue", tags=["queue"])
 app.include_router(posting.router, prefix="/posting", tags=["posting"])
 app.include_router(metrics.router, prefix="/metrics", tags=["metrics"])
 app.include_router(onboarding.router, prefix="/onboarding", tags=["onboarding"])
+app.include_router(settings.router, prefix="/settings", tags=["settings"])
 
 @app.get("/health")
 def health():

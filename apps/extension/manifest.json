@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Operative1 - Connect Twitter",
+  "version": "1.0.0",
+  "description": "One-click Twitter connection for Operative1",
+  "permissions": [
+    "cookies",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://x.com/*",
+    "https://twitter.com/*",
+    "https://keen-mindfulness-production-970b.up.railway.app/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}
