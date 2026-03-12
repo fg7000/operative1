@@ -71,12 +71,18 @@ export default function OnboardingPage() {
     if (!productConfig) return
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    const { error } = await supabase.from('products').insert({
-      ...productConfig, user_id: user?.id,
-      auto_post: { twitter: false, reddit: false, linkedin: false, hn: false },
-      max_daily_replies: { twitter: 5, reddit: 3, linkedin: 3, hn: 1 }, active: true
+    const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+    const res = await fetch(`${API}/products/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: productConfig, user_id: user?.id })
     })
-    if (error) { setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${error.message}` }]); setLoading(false); return }
+    if (!res.ok) {
+      const err = await res.text()
+      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err}` }])
+      setLoading(false)
+      return
+    }
     router.push('/queue')
   }
 
