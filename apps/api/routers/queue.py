@@ -1,9 +1,12 @@
 from fastapi import APIRouter
 from pipelines.twitter import run_twitter_pipeline
+from dotenv import load_dotenv
 import httpx
 import json
 import os
 import logging
+
+load_dotenv()
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -70,7 +73,13 @@ Items:
                     'max_tokens': 4000
                 }
             )
-            content = resp.json()['choices'][0]['message']['content']
+            raw_resp = resp.json()
+            logger.info(f"Rank API response status: {resp.status_code}")
+            if 'error' in raw_resp:
+                logger.error(f"Rank API error: {raw_resp['error']}")
+                return {"error": f"API error: {raw_resp['error']}"}
+            content = raw_resp['choices'][0]['message']['content']
+            logger.info(f"Rank raw content: {content[:500]}")
 
             clean = content
             if '```' in clean:
