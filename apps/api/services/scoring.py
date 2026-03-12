@@ -59,7 +59,13 @@ Respond with ONLY a JSON object, no other text, no markdown, no explanation:
             logger.info(f"Tier2 raw response: {raw}")
             content = raw['choices'][0]['message']['content'].strip()
             logger.info(f"Tier2 content: {content}")
-            clean = content.replace('```json', '').replace('```', '').strip()
+            clean = content
+            if '```' in clean:
+                clean = '\n'.join(line for line in clean.split('\n') if '```' not in line)
+            first = clean.find('{')
+            last = clean.rfind('}')
+            if first != -1 and last > first:
+                clean = clean[first:last + 1]
             score = json.loads(clean).get('relevance', 0.0)
             logger.info(f"Tier2 score: {score} for: {post.get('text', '')[:60]}")
             return score
