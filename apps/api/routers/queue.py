@@ -87,15 +87,22 @@ Items:
             first = clean.find('{')
             last = clean.rfind('}')
             if first != -1 and last > first:
-                parsed = json.loads(clean[first:last + 1])
+                try:
+                    parsed = json.loads(clean[first:last + 1])
+                except json.JSONDecodeError as je:
+                    logger.error(f"Rank JSON parse error: {je}, content: {clean[first:first+200]}")
+                    return {"ranked_ids": [item['id'] for item in items], "notes": {}}
                 # Map numeric indices back to UUIDs
                 ranked_indices = parsed.get('ranked', [])
                 ranked_ids = [id_map.get(str(idx), '') for idx in ranked_indices if str(idx) in id_map]
                 raw_notes = parsed.get('notes', {})
                 notes = {id_map.get(str(k), str(k)): v for k, v in raw_notes.items() if str(k) in id_map}
-                return {"ranked_ids": ranked_ids, "notes": notes}
+                # Include any items not in the ranking at the end
+                remaining = [item['id'] for item in items if item['id'] not in ranked_ids]
+                return {"ranked_ids": ranked_ids + remaining, "notes": notes}
 
-        return {"error": "Failed to parse AI response"}
+            logger.error(f"Rank: no JSON found in response: {content[:300]}")
+            return {"ranked_ids": [item['id'] for item in items], "notes": {}}
     except Exception as e:
         logger.error(f"Queue rank error: {e}", exc_info=True)
         return {"error": str(e)}
