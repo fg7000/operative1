@@ -3,6 +3,7 @@ import httpx
 import json
 import logging
 from dotenv import load_dotenv
+from services.agent_prompts import CONTEXT_SCORER_PROMPT
 
 load_dotenv()
 
@@ -14,12 +15,11 @@ async def ai_context_score(post: dict, product: dict) -> dict:
     """Single AI pass that replaces both tier1 and tier2 scoring.
     Returns {'score': 0-10, 'reason': 'one sentence explanation'} or None on failure."""
 
-    prompt = f"""You are a marketing relevance analyst. Given this product and this tweet, rate how strategically valuable it would be for this product's brand account to reply. Consider: Is the person expressing a problem this product solves? Are they asking a question this product answers? Are they frustrated with a competitor? Are they in the target audience? Is there genuine engagement opportunity or is this spam/noise? Rate 0-10 and explain in one sentence. Return JSON only: {{"score": 7, "reason": "User is frustrated with ChatGPT privacy, directly in target audience"}}
-
-Product: {product.get('name', '')}
-Description: {product.get('description', '')}
-Value prop: {product.get('value_prop', '')}
-Target audience context: {product.get('system_prompt', '')[:300]}
+    prompt = CONTEXT_SCORER_PROMPT.format(
+        product_name=product.get('name', ''),
+        description=product.get('description', ''),
+        value_prop=product.get('value_prop', ''),
+    ) + f"""
 
 Tweet: {post.get('text', '')}
 Author: @{post.get('author', 'unknown')}

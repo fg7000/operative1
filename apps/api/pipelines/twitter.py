@@ -7,6 +7,7 @@ from services.scoring import ai_context_score
 from services.generator import generate_reply
 from services.database import get_active_products, is_seen, mark_seen, insert_reply_queue, should_auto_post
 from services.poster import post_to_twitter
+from services.agent_prompts import TRANSLATOR_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +24,10 @@ async def detect_and_translate(text: str) -> dict:
                 headers={'Authorization': f'Bearer {OPENROUTER_API_KEY}'},
                 json={
                     'model': 'anthropic/claude-haiku-4-5',
-                    'messages': [{'role': 'user', 'content': f"""Detect the language of this text and translate it to English if it's not already English.
-Return JSON only: {{"language": "en", "translated": null}} if English, or {{"language": "tr", "translated": "the english translation"}} if non-English.
-Use ISO 639-1 language codes.
+                    'messages': [{'role': 'user', 'content': f"""Detect the language of this text. If it's English, return JSON: {{"language": "en", "translated": null}}
+If it's NOT English, translate it using these instructions:
+{TRANSLATOR_PROMPT}
+Then return JSON: {{"language": "<iso-639-1 code>", "translated": "<your english translation>"}}
 
 Text: {text}"""}],
                     'max_tokens': 500

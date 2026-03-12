@@ -3,6 +3,7 @@ import httpx
 import json
 import logging
 from dotenv import load_dotenv
+from services.agent_prompts import OPTIMIZER_PROMPT
 
 load_dotenv()
 
@@ -58,25 +59,10 @@ async def run_optimizer():
                 'helpful_expert': 50, 'soft_mention': 30, 'direct_pitch': 20
             })
 
-            # Ask LLM for optimization recommendations
-            prompt = f"""You are an engagement optimizer for a social media reply bot.
-
-Product: {product['name']}
-Value prop: {product.get('value_prop', '')}
-
-Current reply mode distribution: {json.dumps(current_dist)}
-
-Performance data per reply mode:
-{json.dumps(summary, indent=2)}
-
-Based on this engagement data, suggest an optimized distribution.
-Rules:
-- Values must sum to 100
-- Don't set any mode below 10 (we need ongoing data from all modes)
-- If a mode has very few samples, don't overreact to its metrics
-
-Respond with ONLY a JSON object:
-{{"helpful_expert": 50, "soft_mention": 30, "direct_pitch": 20, "reasoning": "brief explanation"}}"""
+            prompt = OPTIMIZER_PROMPT.format(
+                current_distribution=json.dumps(current_dist),
+                performance_data=json.dumps(summary, indent=2),
+            )
 
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.post(
@@ -85,7 +71,7 @@ Respond with ONLY a JSON object:
                     json={
                         'model': 'anthropic/claude-haiku-4-5',
                         'messages': [{'role': 'user', 'content': prompt}],
-                        'max_tokens': 300
+                        'max_tokens': 500
                     }
                 )
                 content = resp.json()['choices'][0]['message']['content']
@@ -101,8 +87,10 @@ Respond with ONLY a JSON object:
                     continue
                 suggestion = json.loads(clean[first:last + 1])
 
-            reasoning = suggestion.pop('reasoning', '')
-            logger.info(f"Optimizer suggestion for {product['name']}: {suggestion} — {reasoning}")
+            new_dist = suggestion.get('new_distribution', {})
+            recommendations = suggestion.get('recommendations', [])
+            logger.info(f"Optimizer suggestion for {product['name']}: {new_dist}")
+            logger.info(f"Recommendations: {recommendations}")
             logger.info(f"Current distribution: {current_dist}")
             logger.info(f"Optimizer does NOT auto-apply. Review and update manually if desired.")
 

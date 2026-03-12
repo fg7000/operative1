@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from pipelines.twitter import run_twitter_pipeline
+from services.agent_prompts import QUEUE_RANKER_PROMPT
 from dotenv import load_dotenv
 import httpx
 import json
@@ -56,8 +57,7 @@ async def rank_queue():
             'reason': em.get('relevance_reason', ''),
         })
 
-    prompt = f"""You are a strategic marketing advisor. Rank these pending replies from most to least strategically valuable to post. Consider: audience fit, reply quality, and potential for positive brand exposure. Return JSON only: {{"ranked": [0, 3, 1, ...], "notes": {{"0": "High value - directly addresses target audience pain point"}}}}
-Use the idx numbers.
+    prompt = QUEUE_RANKER_PROMPT + f"""
 
 Items:
 {json.dumps(items_summary)}"""
