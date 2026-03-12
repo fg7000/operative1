@@ -16,8 +16,10 @@ logger = logging.getLogger(__name__)
 TWITTER_BEARER = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
 
 # GraphQL endpoint and query ID for CreateTweet
-# Note: queryId may change when Twitter updates their bundle - check main.js if this breaks
-GRAPHQL_CREATE_TWEET_URL = "https://x.com/i/api/graphql/znCTF5Sz05z_JNXM6p5xWg/CreateTweet"
+# Note: queryId changes when Twitter updates their bundle - get latest from:
+# https://github.com/trevorhobenshield/twitter-api-client/blob/main/twitter/constants.py
+GRAPHQL_QUERY_ID = "7TKRKCPuAGsmYde0CudbVg"
+GRAPHQL_CREATE_TWEET_URL = f"https://x.com/i/api/graphql/{GRAPHQL_QUERY_ID}/CreateTweet"
 
 
 def check_tweet_reply_allowed(tweet_id: str) -> bool:
@@ -103,7 +105,7 @@ def build_tweet_payload(text: str, reply_to_tweet_id: str = None) -> dict:
     return {
         "variables": json.dumps(variables),
         "features": json.dumps(features),
-        "queryId": "znCTF5Sz05z_JNXM6p5xWg"
+        "queryId": GRAPHQL_QUERY_ID
     }
 
 
