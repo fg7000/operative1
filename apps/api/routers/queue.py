@@ -27,6 +27,13 @@ async def list_pending():
     res = supabase.table('reply_queue').select('*').eq('status', 'pending').order('created_at', desc=True).execute()
     return res.data
 
+@router.get("/history")
+async def list_history():
+    """Return posted, failed, and rejected items for audit trail."""
+    from services.database import supabase
+    res = supabase.table('reply_queue').select('*').neq('status', 'pending').order('created_at', desc=True).limit(100).execute()
+    return res.data
+
 @router.delete("/clear-pending")
 async def clear_pending():
     """Delete all pending queue items (old items without new intelligence fields)."""

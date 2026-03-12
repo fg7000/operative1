@@ -65,7 +65,22 @@ export default function QueuePage() {
     setRanking(false)
   }
 
-  async function approve(item: QueueItem) { setActionLoading(item.id); await fetch(`${API}/queue/${item.id}/approve`,{method:'POST'}); await fetchQueue(); setActionLoading(null) }
+  async function approve(item: QueueItem) {
+    setActionLoading(item.id)
+    try {
+      const res = await fetch(`${API}/queue/${item.id}/approve`, { method: 'POST' })
+      const data = await res.json()
+      if (data.status === 'failed') {
+        alert(`Failed to post: ${data.error || 'Unknown error'}`)
+      } else if (data.status === 'posted') {
+        // Success - could show a toast here
+      }
+    } catch (e) {
+      alert(`Network error: ${e}`)
+    }
+    await fetchQueue()
+    setActionLoading(null)
+  }
   async function reject(id: string) { setActionLoading(id); await fetch(`${API}/queue/${id}/reject`,{method:'POST'}); await fetchQueue(); setActionLoading(null) }
   async function saveEdit(id: string) { setActionLoading(id); await fetch(`${API}/queue/${id}/edit?edited_reply=${encodeURIComponent(editText)}`,{method:'PATCH'}); setEditingId(null); await fetchQueue(); setActionLoading(null) }
 
