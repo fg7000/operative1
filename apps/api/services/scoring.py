@@ -11,6 +11,15 @@ OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 logger = logging.getLogger(__name__)
 
 
+def sanitize_dashes(text: str) -> str:
+    """Replace em dashes and en dashes with hyphens or commas."""
+    text = text.replace('—', ', ')
+    text = text.replace('–', '-')
+    text = text.replace('  ', ' ')
+    text = text.replace(', ,', ',')
+    return text.strip()
+
+
 async def ai_context_score(post: dict, product: dict) -> dict:
     """Single AI pass that replaces both tier1 and tier2 scoring.
     Returns {'score': 0-10, 'reason': 'one sentence explanation'} or None on failure."""
@@ -50,8 +59,8 @@ Likes: {post.get('likes', 0)} | Replies: {post.get('replies', 0)}"""
                 return None
             parsed = json.loads(clean[first:last + 1])
             score = parsed.get('score', 0)
-            reason = parsed.get('reason', '')
-            logger.info(f"AI context score: {score}/10 — {reason} — for: {post.get('text', '')[:60]}")
+            reason = sanitize_dashes(parsed.get('reason', ''))
+            logger.info(f"AI context score: {score}/10 - {reason} - for: {post.get('text', '')[:60]}")
             return {'score': score, 'reason': reason}
     except Exception as e:
         logger.error(f"AI context score error: {e}", exc_info=True)

@@ -10,10 +10,22 @@ load_dotenv()
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 logger = logging.getLogger(__name__)
 
+
+def sanitize_dashes(text: str) -> str:
+    """Replace em dashes and en dashes with hyphens or commas."""
+    # Replace em dash (—) and en dash (–) with comma-space for natural flow
+    text = text.replace('—', ', ')
+    text = text.replace('–', '-')
+    # Clean up any double spaces or comma-comma
+    text = text.replace('  ', ' ')
+    text = text.replace(', ,', ',')
+    return text.strip()
+
+
 MODE_INSTRUCTIONS = {
-    'helpful_expert': "Be a genuinely helpful expert. Answer the question or add real value to the conversation. Only mention our product if it's directly relevant — and even then, keep it brief and natural. The goal is to build credibility, not sell.",
-    'soft_mention': "Be helpful and conversational. Weave in a brief, natural mention of our product as one option among others. Don't make it the focus — just a friendly suggestion. Think 'oh btw, X does this too' energy.",
-    'direct_pitch': "Be helpful but clearly recommend our product as a solution. Explain why it fits the user's need. Keep it genuine and not salesy — more like a friend recommending something they actually use."
+    'helpful_expert': "Be a genuinely helpful expert. Answer the question or add real value to the conversation. Only mention our product if it's directly relevant, and even then, keep it brief and natural. The goal is to build credibility, not sell. NEVER use em dashes or en dashes in your reply. Use commas, periods, or hyphens instead.",
+    'soft_mention': "Be helpful and conversational. Weave in a brief, natural mention of our product as one option among others. Don't make it the focus, just a friendly suggestion. Think 'oh btw, X does this too' energy. NEVER use em dashes or en dashes in your reply. Use commas, periods, or hyphens instead.",
+    'direct_pitch': "Be helpful but clearly recommend our product as a solution. Explain why it fits the user's need. Keep it genuine and not salesy, more like a friend recommending something they actually use. NEVER use em dashes or en dashes in your reply. Use commas, periods, or hyphens instead."
 }
 
 PLATFORM_LENGTH = {
@@ -100,6 +112,9 @@ Respond with ONLY a JSON object, no other text, no markdown:
             clean = clean[first:last + 1]
             parsed = json.loads(clean)
             parsed['reply_mode'] = reply_mode
+            # Sanitize dashes from the reply
+            if 'reply' in parsed:
+                parsed['reply'] = sanitize_dashes(parsed['reply'])
             logger.info(f"Generator parsed reply: {parsed}")
             return parsed
         except Exception as e:

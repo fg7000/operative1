@@ -20,6 +20,8 @@ Score 0-10 where:
 - 6-7: Good opportunity, genuine relevance
 - 8-10: Perfect match, exactly the kind of conversation this brand should be in
 
+NEVER use em dashes or en dashes in your reason. Use commas, periods, or hyphens instead.
+
 Return JSON only: {{"score": 7, "reason": "User is frustrated with ChatGPT logging conversations, directly asking for alternatives"}}"""
 
 TRANSLATOR_PROMPT = """Translate the following text to English. Preserve the tone, slang, and intent — don't formalize it. If it contains hashtags or mentions, keep them as-is. Return only the translation, nothing else."""
