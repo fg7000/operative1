@@ -187,7 +187,10 @@ class MarkFailedRequest(BaseModel):
 
 @router.post("/{queue_id}/mark-posted")
 async def mark_posted(queue_id: str, body: MarkPostedRequest):
-    """Mark a queue item as posted (called by frontend after extension posts successfully)."""
+    """Mark a queue item as posted (called by frontend after extension posts successfully).
+
+    NEVER DELETE — audit trail required. Status updates only.
+    """
     from services.database import supabase
 
     existing = supabase.table('reply_queue').select('engagement_metrics').eq('id', queue_id).execute()
@@ -195,6 +198,7 @@ async def mark_posted(queue_id: str, body: MarkPostedRequest):
     if body.posted_tweet_id:
         metrics['posted_tweet_id'] = str(body.posted_tweet_id)
 
+    # STATUS UPDATE ONLY — no deletions allowed
     supabase.table('reply_queue').update({
         'status': 'posted',
         'posted_at': 'now()',
@@ -205,9 +209,13 @@ async def mark_posted(queue_id: str, body: MarkPostedRequest):
 
 @router.post("/{queue_id}/mark-failed")
 async def mark_failed(queue_id: str, body: MarkFailedRequest):
-    """Mark a queue item as failed (called by frontend when extension posting fails)."""
+    """Mark a queue item as failed (called by frontend when extension posting fails).
+
+    NEVER DELETE — audit trail required. Status updates only.
+    """
     from services.database import supabase
 
+    # STATUS UPDATE ONLY — no deletions allowed
     supabase.table('reply_queue').update({
         'status': 'failed',
         'rejection_reason': body.error or 'Extension posting failed'
