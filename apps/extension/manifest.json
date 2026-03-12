@@ -1,17 +1,24 @@
 {
   "manifest_version": 3,
   "name": "Operative1 - Connect Twitter",
-  "version": "1.0.0",
-  "description": "One-click Twitter connection for Operative1",
+  "version": "1.1.0",
+  "description": "Twitter connection and posting for Operative1",
   "permissions": [
-    "cookies",
-    "activeTab"
+    "cookies"
   ],
   "host_permissions": [
     "https://x.com/*",
-    "https://twitter.com/*",
-    "https://keen-mindfulness-production-970b.up.railway.app/*"
+    "https://twitter.com/*"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "externally_connectable": {
+    "matches": [
+      "https://operative1.vercel.app/*",
+      "http://localhost:3000/*"
+    ]
+  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {

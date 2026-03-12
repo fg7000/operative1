@@ -1,6 +1,9 @@
 'use client'
 import { useEffect, useState } from 'react'
 
+// Extension ID - set via NEXT_PUBLIC_EXTENSION_ID env var after loading extension in Chrome
+const EXTENSION_ID = process.env.NEXT_PUBLIC_EXTENSION_ID || ''
+
 type QueueItem = {
   id: string; platform: string; original_content: string; original_url: string
   original_author: string; draft_reply: string; edited_reply: string | null
@@ -33,10 +36,35 @@ export default function QueuePage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [ranking, setRanking] = useState(false)
   const [rankNotes, setRankNotes] = useState<Record<string,string>>({})
+  const [extensionConnected, setExtensionConnected] = useState<boolean | null>(null)
 
   const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-  useEffect(() => { fetchQueue() }, [])
+  useEffect(() => {
+    fetchQueue()
+    checkExtension()
+  }, [])
+
+  async function checkExtension() {
+    if (!EXTENSION_ID || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+      setExtensionConnected(false)
+      return
+    }
+    try {
+      const response = await new Promise<{success: boolean; version?: string}>((resolve) => {
+        chrome.runtime.sendMessage(EXTENSION_ID, { action: 'ping' }, (resp) => {
+          if (chrome.runtime.lastError || !resp) {
+            resolve({ success: false })
+          } else {
+            resolve(resp)
+          }
+        })
+      })
+      setExtensionConnected(response.success)
+    } catch {
+      setExtensionConnected(false)
+    }
+  }
 
   async function fetchQueue() {
     const res = await fetch(`${API}/queue/pending`)
@@ -65,17 +93,78 @@ export default function QueuePage() {
     setRanking(false)
   }
 
+  function extractTweetId(url: string): string {
+    if (!url) return ''
+    const parts = url.split('/')
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i] === 'status' && i + 1 < parts.length) {
+        return parts[i + 1].split('?')[0]
+      }
+    }
+    return ''
+  }
+
+  async function postViaExtension(tweetId: string, replyText: string): Promise<{success: boolean; tweet_id?: string; error?: string}> {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage(EXTENSION_ID, {
+        action: 'post_reply',
+        tweet_id: tweetId,
+        reply_text: replyText
+      }, (response) => {
+        if (chrome.runtime.lastError || !response) {
+          resolve({ success: false, error: 'Extension not responding' })
+        } else {
+          resolve(response)
+        }
+      })
+    })
+  }
+
   async function approve(item: QueueItem) {
     setActionLoading(item.id)
+    const replyText = item.edited_reply || item.draft_reply
+    const tweetId = extractTweetId(item.original_url)
+
+    if (!tweetId) {
+      alert('Could not extract tweet ID from URL')
+      setActionLoading(null)
+      return
+    }
+
+    // Try extension first if connected
+    if (extensionConnected) {
+      const result = await postViaExtension(tweetId, replyText)
+      if (result.success) {
+        // Update backend DB status
+        await fetch(`${API}/queue/${item.id}/mark-posted`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ posted_tweet_id: result.tweet_id })
+        })
+        setItems(prev => prev.filter(i => i.id !== item.id))
+        setActionLoading(null)
+        return
+      } else {
+        alert(`Posting failed: ${result.error}`)
+        // Update DB with failure
+        await fetch(`${API}/queue/${item.id}/mark-failed`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ error: result.error })
+        })
+        setItems(prev => prev.filter(i => i.id !== item.id))
+        setActionLoading(null)
+        return
+      }
+    }
+
+    // Fallback to backend (will likely get Error 226)
     try {
       const res = await fetch(`${API}/queue/${item.id}/approve`, { method: 'POST' })
       const data = await res.json()
       if (data.status === 'failed') {
-        // Instead of alert, just remove from local state (it's now in Failed in DB)
         setItems(prev => prev.filter(i => i.id !== item.id))
-        // Could show a non-blocking toast here in the future
       } else if (data.status === 'posted') {
-        // Remove from local state without full refresh
         setItems(prev => prev.filter(i => i.id !== item.id))
       }
     } catch (e) {
@@ -113,6 +202,23 @@ export default function QueuePage() {
 
   return (
     <div style={{maxWidth:'680px'}}>
+      {/* Extension Status Banner */}
+      {extensionConnected === false && (
+        <div style={{padding:'12px 16px',marginBottom:'16px',background:'#fff3e0',border:'1px solid #ffe0b2',borderRadius:'10px',display:'flex',alignItems:'center',gap:'10px'}}>
+          <span style={{fontSize:'16px'}}>&#9888;</span>
+          <div>
+            <div style={{fontSize:'13px',fontWeight:600,color:'#e65100'}}>Extension not detected</div>
+            <div style={{fontSize:'12px',color:'#f57c00'}}>Install the Operative1 Chrome extension to post replies. Server-side posting may fail due to Twitter automation detection.</div>
+          </div>
+        </div>
+      )}
+      {extensionConnected === true && (
+        <div style={{padding:'10px 16px',marginBottom:'16px',background:'#e8f5e9',border:'1px solid #c8e6c9',borderRadius:'10px',display:'flex',alignItems:'center',gap:'8px'}}>
+          <span style={{width:'8px',height:'8px',borderRadius:'50%',background:'#4caf50'}}></span>
+          <span style={{fontSize:'13px',fontWeight:500,color:'#2e7d32'}}>Extension connected - replies will post from your browser</span>
+        </div>
+      )}
+
       <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:'32px'}}>
         <div>
           <h1 style={{fontSize:'28px',fontWeight:600,color:'#111',lineHeight:1}}>Reply Queue</h1>

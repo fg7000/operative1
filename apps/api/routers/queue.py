@@ -1,4 +1,6 @@
 from fastapi import APIRouter
+from pydantic import BaseModel
+from typing import Optional
 from pipelines.twitter import run_twitter_pipeline
 from services.agent_prompts import QUEUE_RANKER_PROMPT
 from dotenv import load_dotenv
@@ -173,3 +175,41 @@ async def edit_reply(queue_id: str, edited_reply: str):
         "edited_reply": edited_reply
     }).eq('id', queue_id).execute()
     return {"status": "updated"}
+
+
+class MarkPostedRequest(BaseModel):
+    posted_tweet_id: Optional[str] = None
+
+
+class MarkFailedRequest(BaseModel):
+    error: Optional[str] = None
+
+
+@router.post("/{queue_id}/mark-posted")
+async def mark_posted(queue_id: str, body: MarkPostedRequest):
+    """Mark a queue item as posted (called by frontend after extension posts successfully)."""
+    from services.database import supabase
+
+    existing = supabase.table('reply_queue').select('engagement_metrics').eq('id', queue_id).execute()
+    metrics = (existing.data[0].get('engagement_metrics') or {}) if existing.data else {}
+    if body.posted_tweet_id:
+        metrics['posted_tweet_id'] = str(body.posted_tweet_id)
+
+    supabase.table('reply_queue').update({
+        'status': 'posted',
+        'posted_at': 'now()',
+        'engagement_metrics': metrics
+    }).eq('id', queue_id).execute()
+    return {"status": "posted"}
+
+
+@router.post("/{queue_id}/mark-failed")
+async def mark_failed(queue_id: str, body: MarkFailedRequest):
+    """Mark a queue item as failed (called by frontend when extension posting fails)."""
+    from services.database import supabase
+
+    supabase.table('reply_queue').update({
+        'status': 'failed',
+        'rejection_reason': body.error or 'Extension posting failed'
+    }).eq('id', queue_id).execute()
+    return {"status": "failed"}
