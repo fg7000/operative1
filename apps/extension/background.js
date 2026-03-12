@@ -135,12 +135,14 @@ async function postTweet(text, replyToTweetId) {
 
 // Listen for messages from the Operative1 dashboard
 chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
-  if (request.action === 'ping') {
-    sendResponse({ success: true, version: '1.1.0' });
+  const action = request.action || request.type;
+
+  if (action === 'ping') {
+    sendResponse({ success: true, version: '1.1.1' });
     return true;
   }
 
-  if (request.action === 'post_reply') {
+  if (action === 'post_reply') {
     const { tweet_id, reply_text } = request;
 
     if (!tweet_id || !reply_text) {
@@ -155,7 +157,7 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
     return true; // Keep channel open for async response
   }
 
-  if (request.action === 'check_login') {
+  if (action === 'check_login') {
     getTwitterCookies()
       .then(cookies => sendResponse({ logged_in: !!cookies }))
       .catch(() => sendResponse({ logged_in: false }));
