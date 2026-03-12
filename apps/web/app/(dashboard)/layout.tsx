@@ -23,12 +23,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
 
-      const { count } = await supabase
-        .from('products')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', session.user.id)
+      const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const res = await fetch(`${API}/products/check?user_id=${session.user.id}`)
+      const { has_products } = await res.json()
 
-      if (!count || count === 0) { router.push('/onboarding'); return }
+      if (!has_products) { router.push('/onboarding'); return }
       setAuthed(true)
     }
     check()

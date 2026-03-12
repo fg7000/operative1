@@ -12,12 +12,11 @@ export default function Home() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
 
-      const { count } = await supabase
-        .from('products')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', session.user.id)
+      const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const res = await fetch(`${API}/products/check?user_id=${session.user.id}`)
+      const { has_products } = await res.json()
 
-      router.push(count && count > 0 ? '/queue' : '/onboarding')
+      router.push(has_products ? '/queue' : '/onboarding')
     }
     route()
   }, [])
