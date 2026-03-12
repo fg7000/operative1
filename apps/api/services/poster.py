@@ -34,22 +34,9 @@ def check_tweet_reply_allowed(tweet_id: str) -> bool:
 
 def get_twitter_cookies(user_id: str = None) -> dict:
     """Get Twitter cookies for posting.
-    Checks social_accounts table by user_id, then falls back to env vars."""
+    Uses environment variables (TWITTER_AUTH_TOKEN, TWITTER_CT0)."""
     auth_token = None
     ct0 = None
-
-    # Try to get from database if user_id provided
-    if user_id:
-        try:
-            from services.database import supabase
-            result = supabase.table('social_accounts').select('credentials').eq('user_id', user_id).eq('platform', 'twitter').execute()
-            if result.data and result.data[0].get('credentials'):
-                creds = result.data[0]['credentials']
-                auth_token = creds.get('auth_token')
-                ct0 = creds.get('ct0')
-                logger.info(f"Found Twitter cookies in database for user {user_id}")
-        except Exception as e:
-            logger.warning(f"Could not fetch cookies from database: {e}")
 
     # Fall back to environment variables
     if not auth_token or not ct0:
