@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const errorMessage = document.getElementById('error-message');
   const connectBtn = document.getElementById('connect-btn');
   const retryBtn = document.getElementById('retry-btn');
-  const emailInput = document.getElementById('email-input');
+  const userIdInput = document.getElementById('user-id-input');
 
   function showSection(section) {
     [connectSection, successSection, errorSection, loginPrompt].forEach(s => s.classList.add('hidden'));
@@ -56,12 +56,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  async function sendCookiesToBackend(email, cookies) {
+  async function sendCookiesToBackend(userId, cookies) {
     const response = await fetch(`${API_URL}/settings/twitter-cookies`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: email,
+        user_id: userId,
         auth_token: cookies.auth_token,
         ct0: cookies.ct0
       })
@@ -76,9 +76,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   connectBtn.addEventListener('click', async () => {
-    const email = emailInput.value.trim();
-    if (!email || !email.includes('@')) {
-      showError('Please enter a valid email address');
+    const userId = userIdInput.value.trim();
+    if (!userId || userId.length < 10) {
+      showError('Please enter a valid User ID (copy from Settings page)');
       return;
     }
 
@@ -97,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       showStatus('Connecting to Operative1...');
 
-      await sendCookiesToBackend(email, cookies);
+      await sendCookiesToBackend(userId, cookies);
       hideStatus();
       showSection(successSection);
 

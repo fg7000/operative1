@@ -10,20 +10,17 @@ logger = logging.getLogger(__name__)
 
 
 class TwitterCookiesRequest(BaseModel):
-    email: str
+    user_id: str
     auth_token: str
     ct0: str
 
 
 @router.post("/twitter-cookies")
 async def save_twitter_cookies(req: TwitterCookiesRequest):
-    """Save Twitter cookies from the Chrome extension.
-
-    Uses email as the primary key for social_accounts.
-    """
+    """Save Twitter cookies from the Chrome extension."""
     from services.database import supabase
 
-    logger.info(f"Received Twitter cookies for email: {req.email}")
+    logger.info(f"Received Twitter cookies for user_id: {req.user_id}")
 
     credentials = {
         'auth_token': req.auth_token,
@@ -31,23 +28,23 @@ async def save_twitter_cookies(req: TwitterCookiesRequest):
     }
 
     try:
-        # Check if record exists for this email
-        existing = supabase.table('social_accounts').select('id').eq('email', req.email).eq('platform', 'twitter').execute()
+        # Check if record exists for this user
+        existing = supabase.table('social_accounts').select('id').eq('user_id', req.user_id).eq('platform', 'twitter').execute()
 
         if existing.data:
             # Update existing record
             supabase.table('social_accounts').update({
                 'credentials': credentials
-            }).eq('email', req.email).eq('platform', 'twitter').execute()
-            logger.info(f"Updated Twitter cookies for {req.email}")
+            }).eq('user_id', req.user_id).eq('platform', 'twitter').execute()
+            logger.info(f"Updated Twitter cookies for user {req.user_id}")
         else:
             # Insert new record
             supabase.table('social_accounts').insert({
+                'user_id': req.user_id,
                 'platform': 'twitter',
-                'credentials': credentials,
-                'email': req.email
+                'credentials': credentials
             }).execute()
-            logger.info(f"Inserted new Twitter cookies for {req.email}")
+            logger.info(f"Inserted new Twitter cookies for user {req.user_id}")
 
         return {"status": "success", "message": "Twitter connected successfully"}
 
@@ -57,11 +54,11 @@ async def save_twitter_cookies(req: TwitterCookiesRequest):
 
 
 @router.get("/twitter-status")
-async def get_twitter_status(email: str):
-    """Check if Twitter is connected for a given email."""
+async def get_twitter_status(user_id: str):
+    """Check if Twitter is connected for a given user."""
     from services.database import supabase
 
-    result = supabase.table('social_accounts').select('id,created_at').eq('email', email).eq('platform', 'twitter').execute()
+    result = supabase.table('social_accounts').select('id,created_at').eq('user_id', user_id).eq('platform', 'twitter').execute()
 
     if result.data:
         return {
@@ -73,10 +70,10 @@ async def get_twitter_status(email: str):
 
 
 @router.delete("/twitter-disconnect")
-async def disconnect_twitter(email: str):
-    """Disconnect Twitter for a given email."""
+async def disconnect_twitter(user_id: str):
+    """Disconnect Twitter for a given user."""
     from services.database import supabase
 
-    supabase.table('social_accounts').delete().eq('email', email).eq('platform', 'twitter').execute()
+    supabase.table('social_accounts').delete().eq('user_id', user_id).eq('platform', 'twitter').execute()
 
     return {"status": "success", "message": "Twitter disconnected"}

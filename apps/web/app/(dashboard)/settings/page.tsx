@@ -8,28 +8,31 @@ const supabase = createClient(
 )
 
 export default function SettingsPage() {
+  const [userId, setUserId] = useState<string | null>(null)
   const [email, setEmail] = useState<string | null>(null)
   const [twitterConnected, setTwitterConnected] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [copied, setCopied] = useState(false)
 
   const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
   useEffect(() => {
     async function init() {
       const { data: { user } } = await supabase.auth.getUser()
-      if (user?.email) {
-        setEmail(user.email)
-        await checkTwitterStatus(user.email)
+      if (user) {
+        setUserId(user.id)
+        setEmail(user.email || null)
+        await checkTwitterStatus(user.id)
       }
       setLoading(false)
     }
     init()
   }, [])
 
-  async function checkTwitterStatus(userEmail: string) {
+  async function checkTwitterStatus(uid: string) {
     try {
-      const res = await fetch(`${API}/settings/twitter-status?email=${encodeURIComponent(userEmail)}`)
+      const res = await fetch(`${API}/settings/twitter-status?user_id=${encodeURIComponent(uid)}`)
       const data = await res.json()
       setTwitterConnected(data.connected)
       setLastUpdated(data.last_updated || null)
@@ -39,17 +42,25 @@ export default function SettingsPage() {
   }
 
   async function disconnectTwitter() {
-    if (!email) return
+    if (!userId) return
     if (!confirm('Are you sure you want to disconnect Twitter?')) return
 
     try {
-      await fetch(`${API}/settings/twitter-disconnect?email=${encodeURIComponent(email)}`, {
+      await fetch(`${API}/settings/twitter-disconnect?user_id=${encodeURIComponent(userId)}`, {
         method: 'DELETE'
       })
       setTwitterConnected(false)
       setLastUpdated(null)
     } catch (e) {
       console.error('Failed to disconnect:', e)
+    }
+  }
+
+  function copyUserId() {
+    if (userId) {
+      navigator.clipboard.writeText(userId)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
     }
   }
 
@@ -70,8 +81,31 @@ export default function SettingsPage() {
       <div style={{ marginBottom: '32px' }}>
         <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#111', marginBottom: '16px' }}>Account</h2>
         <div style={{ padding: '16px 20px', background: '#fafafa', borderRadius: '12px', border: '1px solid #e8e8e8' }}>
-          <div style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#999', marginBottom: '4px' }}>Email</div>
-          <div style={{ fontSize: '14px', color: '#111' }}>{email || 'Not signed in'}</div>
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#999', marginBottom: '4px' }}>Email</div>
+            <div style={{ fontSize: '14px', color: '#111' }}>{email || 'Not signed in'}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#999', marginBottom: '4px' }}>User ID</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <code style={{ fontSize: '13px', color: '#111', background: '#fff', padding: '4px 8px', borderRadius: '4px', border: '1px solid #e0e0e0' }}>{userId || 'N/A'}</code>
+              <button
+                onClick={copyUserId}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: '4px',
+                  background: copied ? '#22c55e' : '#f5f5f5',
+                  color: copied ? '#fff' : '#555',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -87,7 +121,7 @@ export default function SettingsPage() {
               </div>
               {lastUpdated && (
                 <p style={{ fontSize: '13px', color: '#666', marginBottom: '16px' }}>
-                  Last updated: {new Date(lastUpdated).toLocaleDateString()}
+                  Connected: {new Date(lastUpdated).toLocaleDateString()}
                 </p>
               )}
               <button
@@ -122,7 +156,7 @@ export default function SettingsPage() {
                 <ol style={{ fontSize: '13px', color: '#555', lineHeight: 1.6, paddingLeft: '20px', margin: 0 }}>
                   <li>Install the Operative1 Chrome extension</li>
                   <li>Log into x.com in your browser</li>
-                  <li>Click the extension and enter your email: <strong>{email}</strong></li>
+                  <li>Click the extension and paste your User ID (copy above)</li>
                   <li>Click "Connect Twitter"</li>
                 </ol>
               </div>
