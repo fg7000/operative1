@@ -9,66 +9,50 @@ load_dotenv()
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 logger = logging.getLogger(__name__)
 
-def tier1_score(post: dict, keywords: list) -> int:
-    score = 30
-    text = post.get('text', '').lower()
-    for kw in keywords:
-        if kw.lower() in text:
-            score += 15
-    likes = post.get('likes', 0)
-    if likes > 5: score += 10
-    if likes > 20: score += 10
-    if likes > 100: score += 10
-    replies = post.get('replies', 0)
-    if replies > 1: score += 10
-    if replies > 5: score += 10
-    if len(text) > 100: score += 10
-    if len(text) > 200: score += 5
-    if text.startswith('rt '): score -= 20
-    if text.startswith('@'): score -= 10
-    final = min(score, 100)
-    logger.info(f"Tier1 score: {final} for: {post.get('text', '')[:80]}")
-    return final
 
-async def tier2_score(post: dict, product: dict) -> float:
-    prompt = f"""Rate the relevance of this tweet to the product on a scale of 0.0 to 1.0.
+async def ai_context_score(post: dict, product: dict) -> dict:
+    """Single AI pass that replaces both tier1 and tier2 scoring.
+    Returns {'score': 0-10, 'reason': 'one sentence explanation'} or None on failure."""
 
-Product: {product['name']}
-Value proposition: {product['value_prop']}
+    prompt = f"""You are a marketing relevance analyst. Given this product and this tweet, rate how strategically valuable it would be for this product's brand account to reply. Consider: Is the person expressing a problem this product solves? Are they asking a question this product answers? Are they frustrated with a competitor? Are they in the target audience? Is there genuine engagement opportunity or is this spam/noise? Rate 0-10 and explain in one sentence. Return JSON only: {{"score": 7, "reason": "User is frustrated with ChatGPT privacy, directly in target audience"}}
+
+Product: {product.get('name', '')}
+Description: {product.get('description', '')}
+Value prop: {product.get('value_prop', '')}
+Target audience context: {product.get('system_prompt', '')[:300]}
 
 Tweet: {post.get('text', '')}
-
-Respond with ONLY a JSON object, no other text, no markdown, no explanation:
-{{"relevance": 0.7}}"""
+Author: @{post.get('author', 'unknown')}
+Likes: {post.get('likes', 0)} | Replies: {post.get('replies', 0)}"""
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             res = await client.post(
                 'https://openrouter.ai/api/v1/chat/completions',
-                headers={
-                    'Authorization': f'Bearer {OPENROUTER_API_KEY}',
-                    'Content-Type': 'application/json'
-                },
+                headers={'Authorization': f'Bearer {OPENROUTER_API_KEY}'},
                 json={
                     'model': 'anthropic/claude-haiku-4-5',
                     'messages': [{'role': 'user', 'content': prompt}],
-                    'max_tokens': 50
+                    'max_tokens': 150
                 }
             )
             raw = res.json()
-            logger.info(f"Tier2 raw response: {raw}")
             content = raw['choices'][0]['message']['content'].strip()
-            logger.info(f"Tier2 content: {content}")
+            logger.info(f"AI context score raw: {content}")
+
             clean = content
             if '```' in clean:
                 clean = '\n'.join(line for line in clean.split('\n') if '```' not in line)
             first = clean.find('{')
             last = clean.rfind('}')
-            if first != -1 and last > first:
-                clean = clean[first:last + 1]
-            score = json.loads(clean).get('relevance', 0.0)
-            logger.info(f"Tier2 score: {score} for: {post.get('text', '')[:60]}")
-            return score
+            if first == -1 or last == -1 or last <= first:
+                logger.error("AI context score: no JSON found")
+                return None
+            parsed = json.loads(clean[first:last + 1])
+            score = parsed.get('score', 0)
+            reason = parsed.get('reason', '')
+            logger.info(f"AI context score: {score}/10 — {reason} — for: {post.get('text', '')[:60]}")
+            return {'score': score, 'reason': reason}
     except Exception as e:
-        logger.error(f"Tier2 error: {e}")
-        return 0.0
+        logger.error(f"AI context score error: {e}", exc_info=True)
+        return None

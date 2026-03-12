@@ -16,6 +16,13 @@ MODE_INSTRUCTIONS = {
     'direct_pitch': "Be helpful but clearly recommend our product as a solution. Explain why it fits the user's need. Keep it genuine and not salesy — more like a friend recommending something they actually use."
 }
 
+PLATFORM_LENGTH = {
+    'twitter': "Your reply MUST be 1-3 sentences maximum. Be punchy, direct, and conversational. No walls of text. Under 250 characters is ideal.",
+    'reddit': "Be detailed and technical, 2-4 paragraphs is fine.",
+    'linkedin': "Professional but concise, 2-3 sentences.",
+    'hn': "Technical and specific, 1-3 sentences.",
+}
+
 def select_reply_mode(product: dict) -> str:
     dist = product.get('auto_post', {}).get('reply_mode_distribution', {
         'helpful_expert': 50, 'soft_mention': 30, 'direct_pitch': 20
@@ -37,10 +44,19 @@ async def generate_reply(post: dict, product: dict, platform: str) -> dict:
     system_prompt = system_prompt.replace('{{forbidden_phrases}}', forbidden)
 
     mode_instruction = MODE_INSTRUCTIONS[reply_mode]
+    length_instruction = PLATFORM_LENGTH.get(platform, "Be concise and natural.")
+
+    # If the post has been translated, reply in the original language
+    original_language = post.get('original_language')
+    language_instruction = ""
+    if original_language and original_language != 'en':
+        language_instruction = f"\n\nIMPORTANT: The original post is in {original_language}. Write your reply in {original_language}, NOT in English."
 
     user_message = f"""Reply to this {platform} post. {mode_instruction}
 
-Keep it natural and conversational — no hashtags, no hard sell, no generic filler.
+{length_instruction}
+
+Keep it natural and conversational — no hashtags, no hard sell, no generic filler.{language_instruction}
 
 Post to reply to:
 {post.get('text', '')}
