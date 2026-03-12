@@ -75,9 +75,13 @@ Items:
             )
             raw_resp = resp.json()
             logger.info(f"Rank API response status: {resp.status_code}")
+            logger.info(f"Rank API raw keys: {list(raw_resp.keys())}")
             if 'error' in raw_resp:
                 logger.error(f"Rank API error: {raw_resp['error']}")
-                return {"error": f"API error: {raw_resp['error']}"}
+                return {"error": f"API error: {json.dumps(raw_resp['error'])}"}
+            if 'choices' not in raw_resp or not raw_resp['choices']:
+                logger.error(f"Rank API no choices: {json.dumps(raw_resp)[:500]}")
+                return {"error": f"API returned no choices: {json.dumps(raw_resp)[:200]}"}
             content = raw_resp['choices'][0]['message']['content']
             logger.info(f"Rank raw content: {content[:500]}")
 
