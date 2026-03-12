@@ -80,3 +80,10 @@ def migrate():
         set_extra_columns_exist(True)
         return {"status": "migrations completed"}
     return {"status": "migrations failed or no DATABASE_URL"}
+
+@app.post("/keyword-cleanup")
+async def keyword_cleanup():
+    """One-time cleanup: replace generic keywords with AI-generated ones for all products."""
+    from services.optimizer import run_keyword_cleanup
+    result = await run_keyword_cleanup()
+    return result

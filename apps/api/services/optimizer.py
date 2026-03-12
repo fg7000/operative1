@@ -4,6 +4,7 @@ import json
 import logging
 from dotenv import load_dotenv
 from services.agent_prompts import OPTIMIZER_PROMPT
+from services.keyword_quality import filter_keywords, generate_keywords_for_product
 
 load_dotenv()
 
@@ -96,3 +97,129 @@ async def run_optimizer():
 
     except Exception as e:
         logger.error(f"Optimizer error: {e}", exc_info=True)
+
+
+async def run_keyword_optimizer():
+    """Daily keyword quality check: replace generic keywords with AI-generated intent-based ones."""
+    logger.info("Keyword optimizer running")
+    try:
+        from services.database import supabase
+
+        products = supabase.table('products').select('*').eq('active', True).execute()
+
+        for product in products.data:
+            keywords = product.get('keywords', {})
+            if not keywords:
+                continue
+
+            updated = False
+            for platform, kw_list in keywords.items():
+                if not isinstance(kw_list, list) or not kw_list:
+                    continue
+
+                good, filtered_out = filter_keywords(kw_list)
+
+                if not filtered_out:
+                    logger.info(f"Keyword optimizer: {product['name']}/{platform} — all {len(kw_list)} keywords are quality, no changes")
+                    continue
+
+                logger.warning(f"Keyword optimizer: {product['name']}/{platform} — filtering out generic: {filtered_out}")
+
+                if good:
+                    # Some good keywords remain, generate replacements for filtered ones
+                    replacement_count = len(filtered_out)
+                    ai_keywords = await generate_keywords_for_product(product, platform)
+                    if ai_keywords:
+                        # Add AI keywords to fill the gap, dedup against existing
+                        existing_lower = {k.lower() for k in good}
+                        new_ones = [k for k in ai_keywords if k.lower() not in existing_lower][:replacement_count + 5]
+                        keywords[platform] = good + new_ones
+                        logger.info(f"Keyword optimizer: {product['name']}/{platform} — kept {len(good)}, added {len(new_ones)} AI-generated")
+                        updated = True
+                    else:
+                        keywords[platform] = good
+                        updated = True
+                else:
+                    # All keywords were generic — full replacement
+                    logger.warning(f"Keyword optimizer: {product['name']}/{platform} — ALL keywords generic, full AI replacement")
+                    ai_keywords = await generate_keywords_for_product(product, platform)
+                    if ai_keywords:
+                        keywords[platform] = ai_keywords
+                        logger.info(f"Keyword optimizer: {product['name']}/{platform} — replaced with {len(ai_keywords)} AI keywords: {ai_keywords[:5]}...")
+                        updated = True
+
+            if updated:
+                supabase.table('products').update({'keywords': keywords}).eq('id', product['id']).execute()
+                logger.info(f"Keyword optimizer: saved updated keywords for {product['name']}")
+
+    except Exception as e:
+        logger.error(f"Keyword optimizer error: {e}", exc_info=True)
+
+
+async def run_keyword_cleanup():
+    """One-time cleanup: check ALL products and replace generic keywords with AI-generated ones.
+    Also clears seen_posts for a fresh start."""
+    logger.info("=== ONE-TIME KEYWORD CLEANUP STARTING ===")
+    try:
+        from services.database import supabase
+
+        products = supabase.table('products').select('*').execute()
+        results = []
+
+        for product in products.data:
+            keywords = product.get('keywords', {})
+            if not keywords:
+                continue
+
+            product_result = {'name': product.get('name'), 'changes': {}}
+            updated = False
+
+            for platform, kw_list in keywords.items():
+                if not isinstance(kw_list, list) or not kw_list:
+                    continue
+
+                good, filtered_out = filter_keywords(kw_list)
+                if not filtered_out:
+                    product_result['changes'][platform] = 'all keywords quality, no changes'
+                    continue
+
+                old_keywords = kw_list[:]
+                ai_keywords = await generate_keywords_for_product(product, platform)
+
+                if ai_keywords:
+                    # Merge good existing + AI-generated, dedup
+                    existing_lower = {k.lower() for k in good}
+                    new_ones = [k for k in ai_keywords if k.lower() not in existing_lower]
+                    keywords[platform] = (good + new_ones)[:20]  # cap at 20
+                    updated = True
+                    product_result['changes'][platform] = {
+                        'removed_generic': filtered_out,
+                        'kept': good,
+                        'ai_generated': new_ones[:10],
+                        'total': len(keywords[platform])
+                    }
+                elif good:
+                    keywords[platform] = good
+                    updated = True
+                    product_result['changes'][platform] = {
+                        'removed_generic': filtered_out,
+                        'kept': good,
+                    }
+
+            if updated:
+                supabase.table('products').update({'keywords': keywords}).eq('id', product['id']).execute()
+                logger.info(f"Cleanup: saved updated keywords for {product.get('name')}")
+
+            results.append(product_result)
+
+        # Clear seen_posts for fresh start
+        seen_res = supabase.table('seen_posts').delete().neq('platform', '__never__').execute()
+        cleared = len(seen_res.data) if seen_res.data else 0
+        logger.info(f"Cleanup: cleared {cleared} seen_posts")
+
+        logger.info("=== ONE-TIME KEYWORD CLEANUP COMPLETE ===")
+        return {'products': results, 'seen_posts_cleared': cleared}
+
+    except Exception as e:
+        logger.error(f"Keyword cleanup error: {e}", exc_info=True)
+        return {'error': str(e)}
