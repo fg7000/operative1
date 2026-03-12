@@ -32,22 +32,22 @@ def check_tweet_reply_allowed(tweet_id: str) -> bool:
     return True
 
 
-def get_twitter_cookies(user_id: str = None) -> dict:
+def get_twitter_cookies(user_id: str = None, email: str = None) -> dict:
     """Get Twitter cookies for posting.
-    First checks social_accounts table for user, then falls back to env vars."""
+    Checks social_accounts table by email, then falls back to env vars."""
     auth_token = None
     ct0 = None
 
-    # Try to get from database if user_id provided
-    if user_id:
+    # Try to get from database if email provided
+    if email:
         try:
             from services.database import supabase
-            result = supabase.table('social_accounts').select('credentials').eq('user_id', user_id).eq('platform', 'twitter').execute()
+            result = supabase.table('social_accounts').select('credentials').eq('email', email).eq('platform', 'twitter').execute()
             if result.data and result.data[0].get('credentials'):
                 creds = result.data[0]['credentials']
                 auth_token = creds.get('auth_token')
                 ct0 = creds.get('ct0')
-                logger.info(f"Found Twitter cookies in database for user {user_id}")
+                logger.info(f"Found Twitter cookies in database for email {email}")
         except Exception as e:
             logger.warning(f"Could not fetch cookies from database: {e}")
 
@@ -120,14 +120,14 @@ def build_tweet_payload(text: str, reply_to_tweet_id: str = None) -> dict:
     }
 
 
-async def post_tweet_graphql(text: str, reply_to_tweet_id: str = None, user_id: str = None) -> dict:
+async def post_tweet_graphql(text: str, reply_to_tweet_id: str = None, email: str = None) -> dict:
     """Post a tweet using Twitter's internal GraphQL API.
 
     Returns:
         {"success": True, "tweet_id": "123..."} on success
         {"success": False, "error": "error message"} on failure
     """
-    cookies = get_twitter_cookies(user_id)
+    cookies = get_twitter_cookies(email=email)
     if not cookies:
         return {"success": False, "error": "No Twitter cookies configured. Please connect your Twitter account."}
 
@@ -233,14 +233,10 @@ async def post_to_twitter(queue_id: str, reply_data: dict, original_post: dict, 
         tweet_url = original_post.get('url', '')
         original_tweet_id = original_post.get('id') or extract_tweet_id_from_url(tweet_url)
 
-        # Get user_id from the queue item to look up their cookies
-        queue_item = supabase.table('reply_queue').select('user_id').eq('id', queue_id).single().execute()
-        user_id = queue_item.data.get('user_id') if queue_item.data else None
+        logger.info(f"Posting reply for queue_id={queue_id}, reply_to={original_tweet_id}")
 
-        logger.info(f"Posting reply for queue_id={queue_id}, user_id={user_id}, reply_to={original_tweet_id}")
-
-        # Try posting as a direct reply first
-        result = await post_tweet_graphql(reply_text, reply_to_tweet_id=original_tweet_id, user_id=user_id)
+        # Post using env var cookies (email-based lookup can be added later)
+        result = await post_tweet_graphql(reply_text, reply_to_tweet_id=original_tweet_id)
 
         if result['success']:
             posted_tweet_id = result['tweet_id']
