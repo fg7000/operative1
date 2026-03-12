@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 
 // Extension ID - set via NEXT_PUBLIC_EXTENSION_ID env var after loading extension in Chrome
 const EXTENSION_ID = process.env.NEXT_PUBLIC_EXTENSION_ID || ''
@@ -12,6 +12,12 @@ type QueueItem = {
   relevance_reason: string | null
   original_language: string | null
   translated_content: string | null
+}
+
+type ItemStatus = {
+  type: 'success' | 'error'
+  message: string
+  tweetId?: string
 }
 
 const platformColor: Record<string,string> = { twitter:'#000', reddit:'#ff4500', linkedin:'#0077b5', hn:'#ff6600' }
@@ -37,18 +43,25 @@ export default function QueuePage() {
   const [ranking, setRanking] = useState(false)
   const [rankNotes, setRankNotes] = useState<Record<string,string>>({})
   const [extensionConnected, setExtensionConnected] = useState<boolean | null>(null)
+  const [itemStatuses, setItemStatuses] = useState<Record<string, ItemStatus>>({})
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
   useEffect(() => {
     fetchQueue()
-    checkExtension()
+    // Start polling for extension every 3 seconds until connected
+    checkExtensionWithPolling()
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+      }
+    }
   }, [])
 
-  async function checkExtension() {
+  async function checkExtension(): Promise<boolean> {
     if (!EXTENSION_ID || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
-      setExtensionConnected(false)
-      return
+      return false
     }
     try {
       const response = await new Promise<{success: boolean; version?: string}>((resolve) => {
@@ -60,16 +73,35 @@ export default function QueuePage() {
           }
         })
       })
-      setExtensionConnected(response.success)
+      return response.success
     } catch {
-      setExtensionConnected(false)
+      return false
+    }
+  }
+
+  async function checkExtensionWithPolling() {
+    const connected = await checkExtension()
+    setExtensionConnected(connected)
+
+    if (!connected) {
+      // Poll every 3 seconds until connected
+      pollIntervalRef.current = setInterval(async () => {
+        const isConnected = await checkExtension()
+        if (isConnected) {
+          setExtensionConnected(true)
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current)
+            pollIntervalRef.current = null
+          }
+        }
+      }, 3000)
     }
   }
 
   async function fetchQueue() {
     const res = await fetch(`${API}/queue/pending`)
     const data = await res.json()
-    setItems(data||[]); setLoading(false); setRankNotes({})
+    setItems(data||[]); setLoading(false); setRankNotes({}); setItemStatuses({})
   }
 
   async function smartRank() {
@@ -112,7 +144,7 @@ export default function QueuePage() {
         reply_text: replyText
       }, (response) => {
         if (chrome.runtime.lastError || !response) {
-          resolve({ success: false, error: 'Extension not responding' })
+          resolve({ success: false, error: 'Extension not responding. Try refreshing the page.' })
         } else {
           resolve(response)
         }
@@ -121,56 +153,70 @@ export default function QueuePage() {
   }
 
   async function approve(item: QueueItem) {
+    // Extension required - no server-side fallback
+    if (!extensionConnected) {
+      return
+    }
+
     setActionLoading(item.id)
+    // Clear any previous status
+    setItemStatuses(prev => {
+      const next = { ...prev }
+      delete next[item.id]
+      return next
+    })
+
     const replyText = item.edited_reply || item.draft_reply
     const tweetId = extractTweetId(item.original_url)
 
     if (!tweetId) {
-      alert('Could not extract tweet ID from URL')
+      setItemStatuses(prev => ({
+        ...prev,
+        [item.id]: { type: 'error', message: 'Could not extract tweet ID from URL' }
+      }))
       setActionLoading(null)
       return
     }
 
-    // Try extension first if connected
-    if (extensionConnected) {
-      const result = await postViaExtension(tweetId, replyText)
-      if (result.success) {
-        // Update backend DB status
-        await fetch(`${API}/queue/${item.id}/mark-posted`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ posted_tweet_id: result.tweet_id })
-        })
-        setItems(prev => prev.filter(i => i.id !== item.id))
-        setActionLoading(null)
-        return
-      } else {
-        alert(`Posting failed: ${result.error}`)
-        // Update DB with failure
-        await fetch(`${API}/queue/${item.id}/mark-failed`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ error: result.error })
-        })
-        setItems(prev => prev.filter(i => i.id !== item.id))
-        setActionLoading(null)
-        return
-      }
-    }
+    const result = await postViaExtension(tweetId, replyText)
 
-    // Fallback to backend (will likely get Error 226)
-    try {
-      const res = await fetch(`${API}/queue/${item.id}/approve`, { method: 'POST' })
-      const data = await res.json()
-      if (data.status === 'failed') {
+    if (result.success) {
+      // Update backend DB status
+      await fetch(`${API}/queue/${item.id}/mark-posted`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ posted_tweet_id: result.tweet_id })
+      })
+
+      // Show success message on card
+      setItemStatuses(prev => ({
+        ...prev,
+        [item.id]: {
+          type: 'success',
+          message: 'Posted successfully!',
+          tweetId: result.tweet_id
+        }
+      }))
+      setActionLoading(null)
+
+      // Remove from queue after 3 seconds
+      setTimeout(() => {
         setItems(prev => prev.filter(i => i.id !== item.id))
-      } else if (data.status === 'posted') {
-        setItems(prev => prev.filter(i => i.id !== item.id))
-      }
-    } catch (e) {
-      console.error('Network error:', e)
+        setItemStatuses(prev => {
+          const next = { ...prev }
+          delete next[item.id]
+          return next
+        })
+      }, 3000)
+    } else {
+      // Show error on card but keep item in queue
+      setItemStatuses(prev => ({
+        ...prev,
+        [item.id]: { type: 'error', message: result.error || 'Unknown error' }
+      }))
+      setActionLoading(null)
+      // Do NOT remove from queue - user can try again or skip
     }
-    setActionLoading(null)
   }
 
   async function reject(id: string) {
@@ -181,7 +227,12 @@ export default function QueuePage() {
   }
 
   async function skip(id: string) {
-    // Move item to bottom of queue locally (doesn't change DB status)
+    // Clear any error status and move item to bottom
+    setItemStatuses(prev => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
     setItems(prev => {
       const item = prev.find(i => i.id === id)
       if (!item) return prev
@@ -193,7 +244,6 @@ export default function QueuePage() {
     setActionLoading(id)
     await fetch(`${API}/queue/${id}/edit?edited_reply=${encodeURIComponent(editText)}`, { method: 'PATCH' })
     setEditingId(null)
-    // Update local state instead of full refresh
     setItems(prev => prev.map(i => i.id === id ? { ...i, edited_reply: editText } : i))
     setActionLoading(null)
   }
@@ -204,12 +254,17 @@ export default function QueuePage() {
     <div style={{maxWidth:'680px'}}>
       {/* Extension Status Banner */}
       {extensionConnected === false && (
-        <div style={{padding:'12px 16px',marginBottom:'16px',background:'#fff3e0',border:'1px solid #ffe0b2',borderRadius:'10px',display:'flex',alignItems:'center',gap:'10px'}}>
+        <div style={{padding:'12px 16px',marginBottom:'16px',background:'#ffebee',border:'1px solid #ffcdd2',borderRadius:'10px',display:'flex',alignItems:'center',gap:'10px'}}>
           <span style={{fontSize:'16px'}}>&#9888;</span>
           <div>
-            <div style={{fontSize:'13px',fontWeight:600,color:'#e65100'}}>Extension not detected</div>
-            <div style={{fontSize:'12px',color:'#f57c00'}}>Install the Operative1 Chrome extension to post replies. Server-side posting may fail due to Twitter automation detection.</div>
+            <div style={{fontSize:'13px',fontWeight:600,color:'#c62828'}}>Connect Chrome Extension Required</div>
+            <div style={{fontSize:'12px',color:'#e53935'}}>Install and enable the Operative1 Chrome extension to post replies. Checking for extension...</div>
           </div>
+        </div>
+      )}
+      {extensionConnected === null && (
+        <div style={{padding:'10px 16px',marginBottom:'16px',background:'#fff3e0',border:'1px solid #ffe0b2',borderRadius:'10px',display:'flex',alignItems:'center',gap:'8px'}}>
+          <span style={{fontSize:'13px',color:'#f57c00'}}>Detecting extension...</span>
         </div>
       )}
       {extensionConnected === true && (
@@ -250,6 +305,7 @@ export default function QueuePage() {
           const relevanceScore = item.engagement_metrics?.relevance_score
           const modeStyle = modeColor[replyMode] || { bg: '#f0f0f0', color: '#555' }
           const rankNote = rankNotes[item.id]
+          const itemStatus = itemStatuses[item.id]
 
           return (
           <div key={item.id} style={{borderRadius:'16px',border:'1px solid #e8e8e8',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(0,0,0,0.05)'}}>
@@ -275,6 +331,24 @@ export default function QueuePage() {
                 {item.mentions_product && <span style={{fontSize:'11px',fontWeight:500,padding:'3px 10px',borderRadius:'20px',background:'#f0f0f0',color:'#555'}}>mentions product</span>}
               </div>
             </div>
+
+            {/* Success/Error Status */}
+            {itemStatus?.type === 'success' && (
+              <div style={{padding:'12px 20px',background:'#e8f5e9',borderBottom:'1px solid #c8e6c9',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <span style={{fontSize:'13px',fontWeight:600,color:'#2e7d32'}}>{itemStatus.message}</span>
+                {itemStatus.tweetId && (
+                  <a href={`https://x.com/i/web/status/${itemStatus.tweetId}`} target="_blank" rel="noopener noreferrer"
+                    style={{fontSize:'13px',fontWeight:500,color:'#1da1f2',textDecoration:'none'}}>
+                    View Tweet &rarr;
+                  </a>
+                )}
+              </div>
+            )}
+            {itemStatus?.type === 'error' && (
+              <div style={{padding:'12px 20px',background:'#ffebee',borderBottom:'1px solid #ffcdd2'}}>
+                <span style={{fontSize:'13px',fontWeight:600,color:'#c62828'}}>Error: {itemStatus.message}</span>
+              </div>
+            )}
 
             {/* AI Rank Note */}
             {rankNote && (
@@ -326,11 +400,25 @@ export default function QueuePage() {
             </div>
 
             {/* Actions */}
-            {editingId!==item.id && (
+            {editingId!==item.id && itemStatus?.type !== 'success' && (
               <div style={{display:'flex',gap:'8px',padding:'12px 20px',background:'#fafafa',borderTop:'1px solid #f0f0f0'}}>
-                <button onClick={()=>approve(item)} disabled={actionLoading===item.id}
-                  style={{flex:1,padding:'10px',borderRadius:'10px',background:'#111',color:'#fff',fontSize:'13px',fontWeight:600,border:'none',cursor:'pointer',opacity:actionLoading===item.id?0.5:1}}>
-                  Approve & Post
+                <button
+                  onClick={()=>approve(item)}
+                  disabled={actionLoading===item.id || !extensionConnected}
+                  title={!extensionConnected ? 'Connect Chrome extension to post' : ''}
+                  style={{
+                    flex:1,
+                    padding:'10px',
+                    borderRadius:'10px',
+                    background: extensionConnected ? '#111' : '#ccc',
+                    color:'#fff',
+                    fontSize:'13px',
+                    fontWeight:600,
+                    border:'none',
+                    cursor: extensionConnected ? 'pointer' : 'not-allowed',
+                    opacity:actionLoading===item.id?0.5:1
+                  }}>
+                  {actionLoading===item.id ? 'Posting...' : 'Approve & Post'}
                 </button>
                 <button onClick={()=>{setEditingId(item.id);setEditText(item.edited_reply||item.draft_reply)}}
                   style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#111',fontSize:'13px',fontWeight:500,border:'1px solid #e0e0e0',cursor:'pointer'}}>
