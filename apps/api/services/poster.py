@@ -103,8 +103,8 @@ def build_tweet_payload(text: str, reply_to_tweet_id: str = None) -> dict:
     }
 
     return {
-        "variables": json.dumps(variables),
-        "features": json.dumps(features),
+        "variables": variables,
+        "features": features,
         "queryId": GRAPHQL_QUERY_ID
     }
 
@@ -127,7 +127,7 @@ async def post_tweet_graphql(text: str, reply_to_tweet_id: str = None, user_id: 
         "authorization": f"Bearer {TWITTER_BEARER}",
         "x-csrf-token": ct0,
         "cookie": f"auth_token={auth_token}; ct0={ct0}",
-        "content-type": "application/x-www-form-urlencoded",
+        "content-type": "application/json",
         "x-twitter-auth-type": "OAuth2Session",
         "x-twitter-active-user": "yes",
         "x-twitter-client-language": "en",
@@ -146,7 +146,7 @@ async def post_tweet_graphql(text: str, reply_to_tweet_id: str = None, user_id: 
             response = await client.post(
                 GRAPHQL_CREATE_TWEET_URL,
                 headers=headers,
-                data=payload
+                json=payload
             )
 
             logger.info(f"GraphQL response status: {response.status_code}")
