@@ -84,7 +84,13 @@ export default function OnboardingPage() {
     <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',background:'#fafafa'}}>
       <header style={{background:'#fff',borderBottom:'1px solid #e8e8e8',padding:'16px 32px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
         <span style={{fontSize:'11px',fontWeight:700,letterSpacing:'0.2em',textTransform:'uppercase',color:'#111'}}>Operative1</span>
-        <span style={{fontSize:'13px',color:'#999'}}>Product Setup</span>
+        <div style={{display:'flex',alignItems:'center',gap:'16px'}}>
+          <span style={{fontSize:'13px',color:'#999'}}>Product Setup</span>
+          <button onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}
+            style={{fontSize:'13px',color:'#999',background:'none',border:'none',cursor:'pointer',textDecoration:'underline'}}>
+            Sign Out
+          </button>
+        </div>
       </header>
 
       <div style={{flex:1,overflowY:'auto',padding:'32px 16px'}}>

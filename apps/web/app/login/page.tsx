@@ -1,11 +1,18 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase-client'
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [hasSession, setHasSession] = useState(false)
   const supabase = createClient()
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setHasSession(true)
+    })
+  }, [])
 
   async function handleGoogleLogin() {
     setLoading(true); setError('')
@@ -37,6 +44,12 @@ export default function LoginPage() {
             </svg>
             {loading ? 'Redirecting…' : 'Continue with Google'}
           </button>
+          {hasSession && (
+            <button onClick={async () => { await supabase.auth.signOut(); setHasSession(false) }}
+              style={{width:'100%',marginTop:'12px',padding:'10px',borderRadius:'10px',background:'none',color:'#999',fontSize:'13px',border:'none',cursor:'pointer',textDecoration:'underline'}}>
+              Sign out of current session
+            </button>
+          )}
         </div>
       </div>
     </div>
