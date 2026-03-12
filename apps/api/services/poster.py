@@ -20,6 +20,18 @@ TWITTER_BEARER = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D
 GRAPHQL_CREATE_TWEET_URL = "https://x.com/i/api/graphql/znCTF5Sz05z_JNXM6p5xWg/CreateTweet"
 
 
+def check_tweet_reply_allowed(tweet_id: str) -> bool:
+    """Check if a tweet allows replies.
+
+    With GraphQL posting, we can usually reply to any tweet that allows it.
+    This is a fallback check when Apify doesn't provide reply_settings.
+    Returns True by default since GraphQL has fewer restrictions.
+    """
+    # For now, assume replies are allowed - the GraphQL API will fail gracefully
+    # if they're not, and we'll catch that in post_tweet_graphql
+    return True
+
+
 def get_twitter_cookies(user_id: str = None) -> dict:
     """Get Twitter cookies for posting.
     First checks social_accounts table for user, then falls back to env vars."""
