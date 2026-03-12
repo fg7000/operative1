@@ -61,12 +61,12 @@ async def get_twitter_status(email: str):
     """Check if Twitter is connected for a given email."""
     from services.database import supabase
 
-    result = supabase.table('social_accounts').select('id,updated_at').eq('email', email).eq('platform', 'twitter').execute()
+    result = supabase.table('social_accounts').select('id,created_at').eq('email', email).eq('platform', 'twitter').execute()
 
     if result.data:
         return {
             "connected": True,
-            "last_updated": result.data[0].get('updated_at')
+            "last_updated": result.data[0].get('created_at')
         }
 
     return {"connected": False}
