@@ -10,7 +10,8 @@ APIFY_API_KEY = os.getenv('APIFY_API_KEY')
 logger = logging.getLogger(__name__)
 
 async def fetch_tweets(keywords: list) -> list:
-    query = ' OR '.join(keywords[:4])
+    # Use more keywords for better targeting (up to 8)
+    query = ' OR '.join(keywords[:8])
     logger.info(f"Fetching tweets for query: {query}")
 
     async with httpx.AsyncClient(timeout=120) as client:
@@ -21,8 +22,7 @@ async def fetch_tweets(keywords: list) -> list:
             json={
                 "searchTerms": [query],
                 "maxItems": 100,
-                "queryType": "Latest",
-                "lang": "en"
+                "queryType": "Latest"
             }
         )
 

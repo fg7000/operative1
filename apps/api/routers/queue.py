@@ -27,6 +27,24 @@ async def list_pending():
     res = supabase.table('reply_queue').select('*').eq('status', 'pending').order('created_at', desc=True).execute()
     return res.data
 
+@router.delete("/clear-pending")
+async def clear_pending():
+    """Delete all pending queue items (old items without new intelligence fields)."""
+    from services.database import supabase
+    res = supabase.table('reply_queue').delete().eq('status', 'pending').execute()
+    deleted = len(res.data) if res.data else 0
+    logger.info(f"Cleared {deleted} pending queue items")
+    return {"status": "cleared", "deleted": deleted}
+
+@router.delete("/clear-seen")
+async def clear_seen():
+    """Clear seen_posts so pipeline can re-process tweets with new intelligence."""
+    from services.database import supabase
+    res = supabase.table('seen_posts').delete().eq('platform', 'twitter').execute()
+    deleted = len(res.data) if res.data else 0
+    logger.info(f"Cleared {deleted} twitter seen posts")
+    return {"status": "cleared", "deleted": deleted}
+
 @router.post("/test-twitter-pipeline")
 async def test_twitter_pipeline():
     await run_twitter_pipeline()
