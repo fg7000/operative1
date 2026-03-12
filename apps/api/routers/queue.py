@@ -142,7 +142,13 @@ async def approve_reply(queue_id: str):
         {"id": item.data.get('original_url', '').split('/')[-1], "url": item.data.get('original_url')},
         {}
     )
-    return {"status": "posted"}
+    # Check actual result from database
+    result = supabase.table('reply_queue').select('status,rejection_reason,engagement_metrics').eq('id', queue_id).single().execute()
+    if result.data and result.data.get('status') == 'posted':
+        posted_id = (result.data.get('engagement_metrics') or {}).get('posted_tweet_id')
+        return {"status": "posted", "tweet_id": posted_id}
+    else:
+        return {"status": "failed", "error": result.data.get('rejection_reason') if result.data else "unknown error"}
 
 @router.post("/{queue_id}/reject")
 async def reject_reply(queue_id: str, reason: str = ""):
