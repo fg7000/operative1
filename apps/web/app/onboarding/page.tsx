@@ -37,15 +37,15 @@ export default function OnboardingPage() {
     const data = await res.json()
     const content = data.content[0].text
     try {
-      // Strip markdown code fences if present (e.g. ```json ... ```)
+      // Strip markdown code fences then extract the JSON object from surrounding text
       let jsonContent = content
-      if (content.includes('```')) {
-        jsonContent = content
-          .split('\n')
-          .filter((line: string) => !line.includes('```'))
-          .join('\n')
-          .trim()
+      if (jsonContent.includes('```')) {
+        jsonContent = jsonContent.split('\n').filter((line: string) => !line.includes('```')).join('\n').trim()
       }
+      const first = jsonContent.indexOf('{')
+      const last = jsonContent.lastIndexOf('}')
+      if (first === -1 || last === -1 || last <= first) throw new Error('no JSON')
+      jsonContent = jsonContent.slice(first, last + 1)
       const parsed = JSON.parse(jsonContent)
       if (parsed.ready && parsed.config) {
         const config = parsed.config
