@@ -104,14 +104,11 @@ async def fetch_tweets(keywords: list) -> list:
         logger.warning(f"All keywords filtered out! Original: {keywords}")
         return []
 
-    logger.info(f"Searching with {len(good_keywords)} quality keywords: {good_keywords[:10]}")
+    logger.info(f"Searching ALL {len(good_keywords)} quality keywords: {good_keywords}")
 
-    # Pick up to 5 keywords, run separate searches for each
-    search_keywords = good_keywords[:5]
-
-    async with httpx.AsyncClient(timeout=180) as client:
-        # Run searches concurrently
-        tasks = [_run_single_search(client, kw, max_items=20) for kw in search_keywords]
+    async with httpx.AsyncClient(timeout=300) as client:
+        # Run ALL searches in parallel
+        tasks = [_run_single_search(client, kw, max_items=30) for kw in good_keywords]
         search_results = await asyncio.gather(*tasks, return_exceptions=True)
 
     # Deduplicate by tweet ID
@@ -127,5 +124,5 @@ async def fetch_tweets(keywords: list) -> list:
                 seen_ids.add(normalized['id'])
                 results.append(normalized)
 
-    logger.info(f"Total unique tweets after dedup: {len(results)} (from {len(search_keywords)} searches)")
+    logger.info(f"Total unique tweets after dedup: {len(results)} (from {len(good_keywords)} searches)")
     return results

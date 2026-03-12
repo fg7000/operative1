@@ -47,7 +47,14 @@ Text: {text}"""}],
     return {'language': 'en', 'translated': None}
 
 
+_pipeline_running = False
+
 async def run_twitter_pipeline():
+    global _pipeline_running
+    if _pipeline_running:
+        logger.info("Twitter pipeline already running, skipping this scheduled run")
+        return
+    _pipeline_running = True
     logger.info("Twitter pipeline running")
     try:
         products = await get_active_products()
@@ -81,8 +88,8 @@ async def run_twitter_pipeline():
                     continue
                 score = score_data['score']
                 reason = score_data['reason']
-                if score < 5:
-                    logger.info(f"Tweet {tweet['id']} scored {score}/10 < 5, skipping — {reason}")
+                if score < 4:
+                    logger.info(f"Tweet {tweet['id']} scored {score}/10 < 4, skipping — {reason}")
                     continue
 
                 logger.info(f"Tweet {tweet['id']} scored {score}/10, generating reply — {reason}")
@@ -110,3 +117,6 @@ async def run_twitter_pipeline():
                     await post_to_twitter(queue_id, reply_data, tweet, product)
     except Exception as e:
         logger.error(f"Twitter pipeline error: {e}", exc_info=True)
+    finally:
+        _pipeline_running = False
+        logger.info("Twitter pipeline finished, lock released")
