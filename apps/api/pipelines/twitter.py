@@ -32,8 +32,8 @@ async def run_twitter_pipeline():
                 logger.info(f"Tweet {tweet['id']} passed tier1 with score {score}, running tier2...")
                 relevance = await tier2_score(tweet, product)
                 logger.info(f"Tweet {tweet['id']} tier2 relevance: {relevance}")
-                if relevance < 0.6:
-                    logger.info(f"Tweet {tweet['id']} relevance {relevance} < 0.6, skipping")
+                if relevance < 0.4:
+                    logger.info(f"Tweet {tweet['id']} relevance {relevance} < 0.4, skipping")
                     continue
                 logger.info(f"Tweet {tweet['id']} passed tier2, generating reply...")
                 reply_data = await generate_reply(tweet, product, 'twitter')

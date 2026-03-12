@@ -35,6 +35,7 @@ async def insert_reply_queue(product: dict, post: dict, reply_data: dict, platfo
         'draft_reply': reply_data.get('reply', ''),
         'confidence_score': reply_data.get('confidence', 0),
         'mentions_product': reply_data.get('mentions_product', False),
+        'engagement_metrics': {'reply_mode': reply_data.get('reply_mode', 'helpful_expert')},
         'status': 'pending'
     }).execute()
     return res.data[0]['id']

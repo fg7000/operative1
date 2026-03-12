@@ -20,7 +20,7 @@ async def fetch_tweets(keywords: list) -> list:
             params={'token': APIFY_API_KEY},
             json={
                 "searchTerms": [query],
-                "maxItems": 20,
+                "maxItems": 100,
                 "queryType": "Latest",
                 "lang": "en"
             }

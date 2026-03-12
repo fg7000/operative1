@@ -2,6 +2,7 @@ import os
 import httpx
 import json
 import logging
+import random
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -9,7 +10,24 @@ load_dotenv()
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 logger = logging.getLogger(__name__)
 
+MODE_INSTRUCTIONS = {
+    'helpful_expert': "Be a genuinely helpful expert. Answer the question or add real value to the conversation. Only mention our product if it's directly relevant — and even then, keep it brief and natural. The goal is to build credibility, not sell.",
+    'soft_mention': "Be helpful and conversational. Weave in a brief, natural mention of our product as one option among others. Don't make it the focus — just a friendly suggestion. Think 'oh btw, X does this too' energy.",
+    'direct_pitch': "Be helpful but clearly recommend our product as a solution. Explain why it fits the user's need. Keep it genuine and not salesy — more like a friend recommending something they actually use."
+}
+
+def select_reply_mode(product: dict) -> str:
+    dist = product.get('auto_post', {}).get('reply_mode_distribution', {
+        'helpful_expert': 50, 'soft_mention': 30, 'direct_pitch': 20
+    })
+    modes = list(dist.keys())
+    weights = [dist[m] for m in modes]
+    return random.choices(modes, weights=weights, k=1)[0]
+
 async def generate_reply(post: dict, product: dict, platform: str) -> dict:
+    reply_mode = select_reply_mode(product)
+    logger.info(f"Selected reply mode: {reply_mode}")
+
     system_prompt = product.get('system_prompt', '')
     system_prompt = system_prompt.replace('{{product_name}}', product['name'])
     system_prompt = system_prompt.replace('{{platform}}', platform)
@@ -18,7 +36,11 @@ async def generate_reply(post: dict, product: dict, platform: str) -> dict:
     forbidden = ', '.join(product.get('forbidden_phrases') or [])
     system_prompt = system_prompt.replace('{{forbidden_phrases}}', forbidden)
 
-    user_message = f"""Reply to this {platform} post in a way that's genuinely helpful and subtly highlights our product where relevant. Keep it natural and conversational — no hashtags, no hard sell.
+    mode_instruction = MODE_INSTRUCTIONS[reply_mode]
+
+    user_message = f"""Reply to this {platform} post. {mode_instruction}
+
+Keep it natural and conversational — no hashtags, no hard sell, no generic filler.
 
 Post to reply to:
 {post.get('text', '')}
@@ -61,6 +83,7 @@ Respond with ONLY a JSON object, no other text, no markdown:
                 return None
             clean = clean[first:last + 1]
             parsed = json.loads(clean)
+            parsed['reply_mode'] = reply_mode
             logger.info(f"Generator parsed reply: {parsed}")
             return parsed
         except Exception as e:
