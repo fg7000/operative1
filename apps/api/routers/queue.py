@@ -38,36 +38,36 @@ async def rank_queue():
     if not items:
         return {"ranked_ids": [], "notes": {}}
 
-    # Build summary for AI
+    # Use short numeric keys for AI, map back to UUIDs after
+    id_map = {str(i): item['id'] for i, item in enumerate(items)}
     items_summary = []
-    for item in items:
+    for i, item in enumerate(items):
         em = item.get('engagement_metrics') or {}
         items_summary.append({
-            'id': item['id'],
+            'idx': i,
             'platform': item['platform'],
-            'original_content': item['original_content'][:200],
-            'original_author': item.get('original_author', ''),
-            'draft_reply': item['draft_reply'][:200],
-            'confidence_score': item.get('confidence_score', 0),
-            'reply_mode': em.get('reply_mode', 'unknown'),
-            'relevance_reason': em.get('relevance_reason', ''),
-            'relevance_score': em.get('relevance_score', 0),
+            'original': item['original_content'][:150],
+            'reply': item['draft_reply'][:150],
+            'score': item.get('confidence_score', 0),
+            'mode': em.get('reply_mode', ''),
+            'reason': em.get('relevance_reason', ''),
         })
 
-    prompt = f"""You are a strategic marketing advisor. Given these pending replies, rank them from most to least strategically valuable to post. Consider: original tweet engagement, audience fit, reply quality, timing relevance, and potential for positive brand exposure. Return JSON only: {{"ranked_ids": ["id1", "id2", ...], "notes": {{"id1": "High value - person has 50k followers asking exactly what we solve"}}}}
+    prompt = f"""You are a strategic marketing advisor. Rank these pending replies from most to least strategically valuable to post. Consider: audience fit, reply quality, and potential for positive brand exposure. Return JSON only: {{"ranked": [0, 3, 1, ...], "notes": {{"0": "High value - directly addresses target audience pain point"}}}}
+Use the idx numbers.
 
-Pending items:
-{json.dumps(items_summary, indent=2)}"""
+Items:
+{json.dumps(items_summary)}"""
 
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(timeout=90) as client:
             resp = await client.post(
                 'https://openrouter.ai/api/v1/chat/completions',
                 headers={'Authorization': f'Bearer {OPENROUTER_API_KEY}'},
                 json={
                     'model': 'anthropic/claude-haiku-4-5',
                     'messages': [{'role': 'user', 'content': prompt}],
-                    'max_tokens': 2000
+                    'max_tokens': 4000
                 }
             )
             content = resp.json()['choices'][0]['message']['content']
@@ -78,8 +78,13 @@ Pending items:
             first = clean.find('{')
             last = clean.rfind('}')
             if first != -1 and last > first:
-                result = json.loads(clean[first:last + 1])
-                return result
+                parsed = json.loads(clean[first:last + 1])
+                # Map numeric indices back to UUIDs
+                ranked_indices = parsed.get('ranked', [])
+                ranked_ids = [id_map.get(str(idx), '') for idx in ranked_indices if str(idx) in id_map]
+                raw_notes = parsed.get('notes', {})
+                notes = {id_map.get(str(k), str(k)): v for k, v in raw_notes.items() if str(k) in id_map}
+                return {"ranked_ids": ranked_ids, "notes": notes}
 
         return {"error": "Failed to parse AI response"}
     except Exception as e:
