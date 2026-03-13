@@ -59,6 +59,10 @@ export type Product = {
     min_opportunity_score: number
     max_ai_calls_per_run: number
   }
+  // Product mention configuration
+  website_url?: string
+  twitter_handle?: string
+  mention_strategy?: 'website' | 'handle' | 'mix'
 }
 
 type ProductContextType = {
