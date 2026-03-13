@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation'
 type Message = { role: 'assistant' | 'user', content: string }
 type MentionStrategy = 'website' | 'handle' | 'mix'
 
+// Extension ID - set via env var
+const EXTENSION_ID = process.env.NEXT_PUBLIC_EXTENSION_ID || ''
+
 export default function OnboardingPage() {
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: "Welcome to Operative1.\n\nLet's set up your first product. Tell me what it's called and what it does — describe it naturally." }
@@ -22,9 +25,40 @@ export default function OnboardingPage() {
   // Autopilot step
   const [showAutopilotStep, setShowAutopilotStep] = useState(false)
   const [autopilotEnabled, setAutopilotEnabled] = useState(true) // ON by default
+  // Extension step
+  const [showExtensionStep, setShowExtensionStep] = useState(false)
+  const [extensionInstalled, setExtensionInstalled] = useState<boolean | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
   const supabase = createClient()
+
+  // Check for extension
+  useEffect(() => {
+    checkExtension()
+  }, [])
+
+  async function checkExtension(): Promise<boolean> {
+    if (!EXTENSION_ID || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+      setExtensionInstalled(false)
+      return false
+    }
+    try {
+      const response = await new Promise<{success: boolean}>((resolve) => {
+        chrome.runtime.sendMessage(EXTENSION_ID, { action: 'ping' }, (resp) => {
+          if (chrome.runtime.lastError || !resp) {
+            resolve({ success: false })
+          } else {
+            resolve(resp)
+          }
+        })
+      })
+      setExtensionInstalled(response.success)
+      return response.success
+    } catch {
+      setExtensionInstalled(false)
+      return false
+    }
+  }
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, loading])
 
@@ -121,24 +155,55 @@ export default function OnboardingPage() {
     }
     setProductConfig(updatedConfig)
     setShowAutopilotStep(false)
-    setDone(true)
+    setShowExtensionStep(true)
     setMessages(prev => [...prev, {
       role: 'assistant',
       content: autopilotEnabled
-        ? `Autopilot is ON. Operative1 will automatically find relevant conversations and post replies on your schedule.\n\nReady to launch?`
-        : `Autopilot is OFF. You'll manually approve each reply before posting.\n\nReady to launch?`
+        ? `Autopilot is ON. Now let's connect your Twitter account so replies can be posted from your browser.`
+        : `Autopilot is OFF. Now let's connect your Twitter account so you can post approved replies.`
+    }])
+  }
+
+  function skipExtensionStep() {
+    setShowExtensionStep(false)
+    setDone(true)
+    setMessages(prev => [...prev, {
+      role: 'assistant',
+      content: `No problem! You can connect Twitter later from Settings.\n\nReady to launch?`
+    }])
+  }
+
+  function confirmExtensionStep() {
+    setShowExtensionStep(false)
+    setDone(true)
+    setMessages(prev => [...prev, {
+      role: 'assistant',
+      content: extensionInstalled
+        ? `Great! Extension is connected. ${autopilotEnabled ? 'Keep your dashboard tab open for continuous posting.' : 'Head to Queue to approve and post replies.'}\n\nReady to launch?`
+        : `You can install the extension anytime from Settings.\n\nReady to launch?`
     }])
   }
 
   async function launchProduct() {
     if (!productConfig) return
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
+
+    // Check session is valid before creating product
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user?.id) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `Your session has expired. Please sign out and sign in again to continue.`
+      }])
+      setLoading(false)
+      return
+    }
+
     const API = process.env.NEXT_PUBLIC_API_URL || 'https://keen-mindfulness-production-970b.up.railway.app'
     const res = await fetch(`${API}/products/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: productConfig, user_id: user?.id })
+      body: JSON.stringify({ config: productConfig, user_id: user.id })
     })
     if (!res.ok) {
       const err = await res.text()
@@ -296,6 +361,103 @@ export default function OnboardingPage() {
                 style={{padding:'13px',borderRadius:'10px',background:'#111',color:'#fff',fontSize:'14px',fontWeight:600,border:'none',cursor:'pointer'}}>
                 Continue
               </button>
+            </div>
+          ) : showExtensionStep ? (
+            <div style={{display:'flex',flexDirection:'column',gap:'16px'}}>
+              {/* Extension Card */}
+              <div style={{padding:'20px',background:'#fff',borderRadius:'12px',border:'1px solid #e8e8e8'}}>
+                {/* Extension Icon */}
+                <div style={{display:'flex',alignItems:'center',gap:'16px',marginBottom:'16px'}}>
+                  <div style={{
+                    width:'48px',height:'48px',borderRadius:'10px',background:'#1a1a1a',
+                    display:'flex',alignItems:'center',justifyContent:'center'
+                  }}>
+                    <span style={{fontSize:'16px',fontWeight:700,color:'#fff'}}>OP1</span>
+                  </div>
+                  <div>
+                    <div style={{fontSize:'15px',fontWeight:600,color:'#111'}}>Operative1 Chrome Extension</div>
+                    <div style={{fontSize:'13px',color:'#666'}}>Posts replies from your browser</div>
+                  </div>
+                </div>
+
+                {extensionInstalled ? (
+                  <div style={{padding:'12px',background:'#e8f5e9',borderRadius:'8px',display:'flex',alignItems:'center',gap:'10px',marginBottom:'16px'}}>
+                    <span style={{width:'10px',height:'10px',borderRadius:'50%',background:'#4caf50'}}></span>
+                    <span style={{fontSize:'14px',fontWeight:500,color:'#2e7d32'}}>Extension installed and ready!</span>
+                  </div>
+                ) : (
+                  <>
+                    <a
+                      href="/extension"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',
+                        width:'100%',padding:'12px',background:'#111',color:'#fff',
+                        borderRadius:'8px',fontSize:'14px',fontWeight:600,
+                        textDecoration:'none',marginBottom:'16px'
+                      }}
+                    >
+                      Install Chrome Extension
+                    </a>
+
+                    {/* Steps */}
+                    <div style={{display:'flex',flexDirection:'column',gap:'10px',marginBottom:'16px'}}>
+                      {[
+                        { num: '1', text: 'Install extension from Chrome Web Store' },
+                        { num: '2', text: 'Make sure you\'re logged into Twitter/X' },
+                        { num: '3', text: 'Click the extension icon in Chrome' },
+                        { num: '4', text: 'Select your product and click Connect' },
+                      ].map((step, i) => (
+                        <div key={i} style={{display:'flex',alignItems:'center',gap:'12px'}}>
+                          <div style={{
+                            width:'24px',height:'24px',borderRadius:'50%',
+                            background:'#f5f5f5',border:'1px solid #e0e0e0',
+                            display:'flex',alignItems:'center',justifyContent:'center',
+                            fontSize:'12px',fontWeight:600,color:'#666'
+                          }}>{step.num}</div>
+                          <span style={{fontSize:'13px',color:'#666'}}>{step.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {/* Security info */}
+                <div style={{padding:'12px',background:'#f8f9fa',borderRadius:'8px'}}>
+                  <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                    <div style={{fontSize:'12px',color:'#666',display:'flex',alignItems:'center',gap:'6px'}}>
+                      <span style={{color:'#22c55e'}}>✓</span> Posts from YOUR browser using YOUR session
+                    </div>
+                    <div style={{fontSize:'12px',color:'#666',display:'flex',alignItems:'center',gap:'6px'}}>
+                      <span style={{color:'#22c55e'}}>✓</span> Your credentials never leave your browser
+                    </div>
+                    <div style={{fontSize:'12px',color:'#666',display:'flex',alignItems:'center',gap:'6px'}}>
+                      <span style={{color:'#22c55e'}}>✓</span> Disconnect anytime with one click
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{display:'flex',gap:'10px'}}>
+                <button onClick={confirmExtensionStep}
+                  style={{flex:1,padding:'13px',borderRadius:'10px',background:'#111',color:'#fff',fontSize:'14px',fontWeight:600,border:'none',cursor:'pointer'}}>
+                  {extensionInstalled ? 'Continue' : 'I\'ll do this later'}
+                </button>
+                {!extensionInstalled && (
+                  <button onClick={() => checkExtension()}
+                    style={{padding:'13px 20px',borderRadius:'10px',background:'#fff',color:'#111',fontSize:'14px',fontWeight:500,border:'1px solid #e0e0e0',cursor:'pointer'}}>
+                    Check Again
+                  </button>
+                )}
+              </div>
+
+              {!extensionInstalled && (
+                <button onClick={skipExtensionStep}
+                  style={{padding:'8px',background:'transparent',border:'none',color:'#999',fontSize:'13px',cursor:'pointer',textDecoration:'underline'}}>
+                  Skip for now
+                </button>
+              )}
             </div>
           ) : done && productConfig ? (
             <div style={{display:'flex',gap:'10px'}}>

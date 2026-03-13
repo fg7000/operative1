@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useProducts } from '@/lib/product-context'
 import { PLATFORM_COLORS, MODE_COLORS, API_URL } from '@/lib/constants'
 import { apiFetch } from '@/lib/api'
+import Link from 'next/link'
 
 // Extension ID - set via NEXT_PUBLIC_EXTENSION_ID env var after loading extension in Chrome
 const EXTENSION_ID = process.env.NEXT_PUBLIC_EXTENSION_ID || ''
@@ -37,6 +38,7 @@ export default function QueuePage() {
   const [editText, setEditText] = useState('')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [ranking, setRanking] = useState(false)
+  const [rankError, setRankError] = useState<string | null>(null)
   const [rankNotes, setRankNotes] = useState<Record<string,string>>({})
   const [extensionConnected, setExtensionConnected] = useState<boolean | null>(null)
   const [cleaning, setCleaning] = useState(false)
@@ -114,8 +116,14 @@ export default function QueuePage() {
   async function smartRank() {
     if (!selectedProductId) return
     setRanking(true)
+    setRankError(null)
     try {
-      const data = await apiFetch<{ranked_ids?: string[], notes?: Record<string,string>}>(`/queue/rank?product_id=${selectedProductId}`, { method: 'POST' })
+      const data = await apiFetch<{ranked_ids?: string[], notes?: Record<string,string>, error?: string}>(`/queue/rank?product_id=${selectedProductId}`, { method: 'POST' })
+      if (data.error) {
+        setRankError(data.error)
+        setRanking(false)
+        return
+      }
       if (data.ranked_ids && Array.isArray(data.ranked_ids)) {
         const idOrder = new Map(data.ranked_ids.map((id: string, i: number) => [id, i]))
         setItems(prev => {
@@ -128,7 +136,10 @@ export default function QueuePage() {
         })
         setRankNotes(data.notes || {})
       }
-    } catch (e) { console.error('Rank error:', e) }
+    } catch (e: any) {
+      console.error('Rank error:', e)
+      setRankError(e.message || 'Failed to rank queue')
+    }
     setRanking(false)
   }
 
@@ -202,10 +213,15 @@ export default function QueuePage() {
 
     if (result.success) {
       // Update backend DB status
-      await apiFetch(`/queue/${item.id}/mark-posted?product_id=${selectedProductId}`, {
-        method: 'POST',
-        body: JSON.stringify({ posted_tweet_id: result.tweet_id })
-      })
+      try {
+        await apiFetch(`/queue/${item.id}/mark-posted?product_id=${selectedProductId}`, {
+          method: 'POST',
+          body: JSON.stringify({ posted_tweet_id: result.tweet_id })
+        })
+      } catch (e: any) {
+        // Tweet was posted but DB update failed - still show success but log warning
+        console.warn('mark-posted failed but tweet was posted:', e)
+      }
 
       // Show success message on card
       setItemStatuses(prev => ({
@@ -297,12 +313,25 @@ export default function QueuePage() {
     <div style={{maxWidth:'680px'}}>
       {/* Extension Status Banner */}
       {extensionConnected === false && (
-        <div style={{padding:'12px 16px',marginBottom:'16px',background:'#ffebee',border:'1px solid #ffcdd2',borderRadius:'10px',display:'flex',alignItems:'center',gap:'10px'}}>
-          <span style={{fontSize:'16px'}}>&#9888;</span>
-          <div>
-            <div style={{fontSize:'13px',fontWeight:600,color:'#c62828'}}>Connect Chrome Extension Required</div>
-            <div style={{fontSize:'12px',color:'#e53935'}}>Install and enable the Operative1 Chrome extension to post replies. Checking for extension...</div>
+        <div style={{padding:'12px 16px',marginBottom:'16px',background:'#ffebee',border:'1px solid #ffcdd2',borderRadius:'10px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+            <span style={{fontSize:'16px'}}>&#9888;</span>
+            <div>
+              <div style={{fontSize:'13px',fontWeight:600,color:'#c62828'}}>Chrome Extension Required</div>
+              <div style={{fontSize:'12px',color:'#e53935'}}>Install the Operative1 Chrome extension to post replies</div>
+            </div>
           </div>
+          <Link
+            href="/extension"
+            target="_blank"
+            style={{
+              padding:'8px 14px',background:'#c62828',color:'#fff',
+              borderRadius:'6px',fontSize:'12px',fontWeight:600,
+              textDecoration:'none',whiteSpace:'nowrap'
+            }}
+          >
+            Install Extension
+          </Link>
         </div>
       )}
       {extensionConnected === null && (
@@ -314,6 +343,12 @@ export default function QueuePage() {
         <div style={{padding:'10px 16px',marginBottom:'16px',background:'#e8f5e9',border:'1px solid #c8e6c9',borderRadius:'10px',display:'flex',alignItems:'center',gap:'8px'}}>
           <span style={{width:'8px',height:'8px',borderRadius:'50%',background:'#4caf50'}}></span>
           <span style={{fontSize:'13px',fontWeight:500,color:'#2e7d32'}}>Extension connected - replies will post from your browser</span>
+        </div>
+      )}
+      {rankError && (
+        <div style={{padding:'12px 16px',marginBottom:'16px',background:'#ffebee',border:'1px solid #ffcdd2',borderRadius:'10px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <span style={{fontSize:'13px',color:'#c62828'}}>Smart Rank failed: {rankError}</span>
+          <button onClick={() => setRankError(null)} style={{background:'none',border:'none',fontSize:'16px',color:'#c62828',cursor:'pointer'}}>&times;</button>
         </div>
       )}
 
