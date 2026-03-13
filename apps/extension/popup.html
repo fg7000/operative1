@@ -16,25 +16,44 @@
     </div>
 
     <div id="connect-section" class="section">
-      <p class="description">Connect your Twitter account to enable reply posting.</p>
-      <input type="text" id="user-id-input" placeholder="Your Operative1 User ID" class="input">
-      <button id="connect-btn" class="btn btn-primary">Connect Twitter</button>
+      <p class="description">Connect your Twitter account to enable reply posting for a product.</p>
+
+      <div class="form-group">
+        <label class="label">Your User ID</label>
+        <input type="text" id="user-id-input" placeholder="Paste from Settings page" class="input">
+        <button id="load-products-btn" class="btn btn-secondary btn-small">Load Products</button>
+      </div>
+
+      <div id="products-section" class="form-group hidden">
+        <label class="label">Select Product</label>
+        <select id="product-select" class="select">
+          <option value="">-- Select a product --</option>
+        </select>
+      </div>
+
+      <button id="connect-btn" class="btn btn-primary" disabled>Connect Twitter</button>
     </div>
 
     <div id="success-section" class="section hidden">
-      <div class="success-icon">✓</div>
+      <div class="success-icon">&#10003;</div>
       <div class="success-text">Connected!</div>
-      <p class="description">Your Twitter account is now linked to Operative1.</p>
+      <p class="description">Twitter is now linked to <strong id="connected-product-name"></strong>.</p>
+      <button id="connect-another-btn" class="btn btn-secondary">Connect Another Product</button>
     </div>
 
     <div id="error-section" class="section hidden">
-      <div class="error-icon">✕</div>
+      <div class="error-icon">&#10005;</div>
       <div id="error-message" class="error-text"></div>
+      <button id="error-retry-btn" class="btn btn-secondary">Try Again</button>
     </div>
 
     <div id="login-prompt" class="section hidden">
       <p class="description">Please log into <a href="https://x.com" target="_blank">x.com</a> first, then try again.</p>
       <button id="retry-btn" class="btn btn-secondary">Retry</button>
+    </div>
+
+    <div class="footer">
+      <a href="https://operative1.vercel.app/settings" target="_blank">Open Dashboard</a>
     </div>
   </div>
 

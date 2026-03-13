@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from pipelines.scheduler import start_scheduler
-from routers import products, queue, posting, metrics, onboarding, settings
+from routers import products, queue, posting, metrics, onboarding, settings, analytics
 import logging
 import os
 
@@ -26,6 +26,10 @@ def run_migrations():
             'ALTER TABLE reply_queue ADD COLUMN IF NOT EXISTS relevance_reason TEXT;',
             'ALTER TABLE reply_queue ADD COLUMN IF NOT EXISTS original_language TEXT;',
             'ALTER TABLE reply_queue ADD COLUMN IF NOT EXISTS translated_content TEXT;',
+            # Performance indexes for multi-product filtering
+            'CREATE INDEX IF NOT EXISTS idx_reply_queue_product_status ON reply_queue(product_id, status);',
+            'CREATE INDEX IF NOT EXISTS idx_reply_queue_product_created ON reply_queue(product_id, created_at DESC);',
+            'CREATE INDEX IF NOT EXISTS idx_products_user ON products(user_id);',
         ]
 
         for sql in migrations:
@@ -67,6 +71,7 @@ app.include_router(posting.router, prefix="/posting", tags=["posting"])
 app.include_router(metrics.router, prefix="/metrics", tags=["metrics"])
 app.include_router(onboarding.router, prefix="/onboarding", tags=["onboarding"])
 app.include_router(settings.router, prefix="/settings", tags=["settings"])
+app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 
 @app.get("/health")
 def health():

@@ -1,5 +1,7 @@
 'use client'
 import { useEffect, useState, useRef } from 'react'
+import { useProducts } from '@/lib/product-context'
+import { PLATFORM_COLORS, MODE_COLORS, API_URL } from '@/lib/constants'
 
 // Extension ID - set via NEXT_PUBLIC_EXTENSION_ID env var after loading extension in Chrome
 const EXTENSION_ID = process.env.NEXT_PUBLIC_EXTENSION_ID || ''
@@ -20,14 +22,6 @@ type ItemStatus = {
   tweetId?: string
 }
 
-const platformColor: Record<string,string> = { twitter:'#000', reddit:'#ff4500', linkedin:'#0077b5', hn:'#ff6600' }
-
-const modeColor: Record<string,{bg:string,color:string}> = {
-  helpful_expert: { bg: '#e8f5e9', color: '#2e7d32' },
-  soft_mention: { bg: '#e3f2fd', color: '#1565c0' },
-  direct_pitch: { bg: '#fff3e0', color: '#e65100' },
-}
-
 function getMetaField(item: QueueItem, field: string): string {
   // Try dedicated column first, then engagement_metrics JSONB
   if ((item as any)[field]) return (item as any)[field]
@@ -35,6 +29,7 @@ function getMetaField(item: QueueItem, field: string): string {
 }
 
 export default function QueuePage() {
+  const { selectedProduct, selectedProductId, loading: productsLoading } = useProducts()
   const [items, setItems] = useState<QueueItem[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -46,10 +41,10 @@ export default function QueuePage() {
   const [itemStatuses, setItemStatuses] = useState<Record<string, ItemStatus>>({})
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-
   useEffect(() => {
-    fetchQueue()
+    if (selectedProductId) {
+      fetchQueue()
+    }
     // Start polling for extension every 3 seconds until connected
     checkExtensionWithPolling()
     return () => {
@@ -57,7 +52,7 @@ export default function QueuePage() {
         clearInterval(pollIntervalRef.current)
       }
     }
-  }, [])
+  }, [selectedProductId])
 
   async function checkExtension(): Promise<boolean> {
     if (!EXTENSION_ID || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
@@ -99,15 +94,27 @@ export default function QueuePage() {
   }
 
   async function fetchQueue() {
-    const res = await fetch(`${API}/queue/pending`)
-    const data = await res.json()
-    setItems(data||[]); setLoading(false); setRankNotes({}); setItemStatuses({})
+    if (!selectedProductId) return
+    setLoading(true)
+    try {
+      const res = await fetch(`${API_URL}/queue/pending?product_id=${selectedProductId}`)
+      const data = await res.json()
+      setItems(data || [])
+      setRankNotes({})
+      setItemStatuses({})
+    } catch (e) {
+      console.error('Failed to fetch queue:', e)
+      setItems([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function smartRank() {
+    if (!selectedProductId) return
     setRanking(true)
     try {
-      const res = await fetch(`${API}/queue/rank`, { method: 'POST' })
+      const res = await fetch(`${API_URL}/queue/rank?product_id=${selectedProductId}`, { method: 'POST' })
       const data = await res.json()
       if (data.ranked_ids && Array.isArray(data.ranked_ids)) {
         const idOrder = new Map(data.ranked_ids.map((id: string, i: number) => [id, i]))
@@ -182,7 +189,7 @@ export default function QueuePage() {
 
     if (result.success) {
       // Update backend DB status
-      await fetch(`${API}/queue/${item.id}/mark-posted`, {
+      await fetch(`${API_URL}/queue/${item.id}/mark-posted?product_id=${selectedProductId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ posted_tweet_id: result.tweet_id })
@@ -220,8 +227,9 @@ export default function QueuePage() {
   }
 
   async function reject(id: string) {
+    if (!selectedProductId) return
     setActionLoading(id)
-    await fetch(`${API}/queue/${id}/reject`, { method: 'POST' })
+    await fetch(`${API_URL}/queue/${id}/reject?product_id=${selectedProductId}`, { method: 'POST' })
     setItems(prev => prev.filter(i => i.id !== id))
     setActionLoading(null)
   }
@@ -241,14 +249,29 @@ export default function QueuePage() {
   }
 
   async function saveEdit(id: string) {
+    if (!selectedProductId) return
     setActionLoading(id)
-    await fetch(`${API}/queue/${id}/edit?edited_reply=${encodeURIComponent(editText)}`, { method: 'PATCH' })
+    await fetch(`${API_URL}/queue/${id}/edit?product_id=${selectedProductId}&edited_reply=${encodeURIComponent(editText)}`, { method: 'PATCH' })
     setEditingId(null)
     setItems(prev => prev.map(i => i.id === id ? { ...i, edited_reply: editText } : i))
     setActionLoading(null)
   }
 
-  if (loading) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'200px',color:'#999',fontSize:'14px'}}>Loading...</div>
+  if (productsLoading) {
+    return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'200px',color:'#999',fontSize:'14px'}}>Loading...</div>
+  }
+
+  if (!selectedProduct) {
+    return (
+      <div style={{textAlign:'center',padding:'80px 40px',background:'#fafafa',borderRadius:'16px',border:'1px solid #e8e8e8'}}>
+        <div style={{fontSize:'32px',marginBottom:'12px'}}>📦</div>
+        <p style={{fontSize:'15px',fontWeight:500,color:'#111'}}>Select a product</p>
+        <p style={{fontSize:'13px',color:'#999',marginTop:'4px'}}>Choose a product from the sidebar to view its queue</p>
+      </div>
+    )
+  }
+
+  if (loading) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'200px',color:'#999',fontSize:'14px'}}>Loading queue...</div>
 
   return (
     <div style={{maxWidth:'680px'}}>
@@ -277,7 +300,9 @@ export default function QueuePage() {
       <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:'32px'}}>
         <div>
           <h1 style={{fontSize:'28px',fontWeight:600,color:'#111',lineHeight:1}}>Reply Queue</h1>
-          <p style={{fontSize:'14px',color:'#999',marginTop:'6px'}}>{items.length} pending {items.length===1?'reply':'replies'}</p>
+          <p style={{fontSize:'14px',color:'#999',marginTop:'6px'}}>
+            {selectedProduct.name} — {items.length} pending {items.length===1?'reply':'replies'}
+          </p>
         </div>
         <div style={{display:'flex',gap:'8px'}}>
           <button onClick={smartRank} disabled={ranking || items.length === 0}
@@ -303,7 +328,7 @@ export default function QueuePage() {
           const originalLang = getMetaField(item, 'original_language')
           const translatedContent = getMetaField(item, 'translated_content')
           const relevanceScore = item.engagement_metrics?.relevance_score
-          const modeStyle = modeColor[replyMode] || { bg: '#f0f0f0', color: '#555' }
+          const modeStyle = MODE_COLORS[replyMode] || { bg: '#f0f0f0', color: '#555' }
           const rankNote = rankNotes[item.id]
           const itemStatus = itemStatuses[item.id]
 
@@ -312,7 +337,7 @@ export default function QueuePage() {
             {/* Header */}
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'#fafafa',borderBottom:'1px solid #f0f0f0',flexWrap:'wrap',gap:'8px'}}>
               <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
-                <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',color:'#fff',background:platformColor[item.platform]||'#111',textTransform:'uppercase',letterSpacing:'0.05em'}}>{item.platform}</span>
+                <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',color:'#fff',background:PLATFORM_COLORS[item.platform]||'#111',textTransform:'uppercase',letterSpacing:'0.05em'}}>{item.platform}</span>
                 {replyMode && (
                   <span style={{fontSize:'10px',fontWeight:600,padding:'3px 8px',borderRadius:'20px',background:modeStyle.bg,color:modeStyle.color,textTransform:'uppercase',letterSpacing:'0.04em'}}>
                     {replyMode.replace('_', ' ')}
