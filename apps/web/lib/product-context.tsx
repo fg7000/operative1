@@ -34,6 +34,31 @@ export type Product = {
   // Counts populated by backend
   pending_count?: number
   posted_count?: number
+  // Fire rate control fields
+  max_replies_per_day?: Record<string, number>
+  max_replies_per_hour?: Record<string, number>
+  min_delay_between_posts?: number
+  posting_hours?: {
+    enabled: boolean
+    timezone: string
+    start_hour: number
+    end_hour: number
+    days_of_week: number[]
+  }
+  autopilot?: {
+    enabled: boolean
+    min_relevance_score: number
+    min_confidence: number
+    require_no_product_mention: boolean
+  }
+  targeting?: {
+    max_tweet_age_hours: number
+    min_likes: number
+    min_author_followers: number
+    max_reply_count: number
+    min_opportunity_score: number
+    max_ai_calls_per_run: number
+  }
 }
 
 type ProductContextType = {
