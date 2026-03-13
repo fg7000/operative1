@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from pipelines.scheduler import start_scheduler
-from routers import products, queue, posting, metrics, onboarding, settings, analytics
+from routers import products, queue, posting, metrics, onboarding, settings, analytics, broadcast
 import logging
 import os
 
@@ -30,6 +30,35 @@ def run_migrations():
             'CREATE INDEX IF NOT EXISTS idx_reply_queue_product_status ON reply_queue(product_id, status);',
             'CREATE INDEX IF NOT EXISTS idx_reply_queue_product_created ON reply_queue(product_id, created_at DESC);',
             'CREATE INDEX IF NOT EXISTS idx_products_user ON products(user_id);',
+            # Broadcast posts table for scheduling and posting original content
+            '''CREATE TABLE IF NOT EXISTS broadcast_posts (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                product_id UUID NOT NULL REFERENCES products(id),
+                user_id UUID NOT NULL,
+                campaign_id UUID,
+                platform TEXT NOT NULL,
+                content TEXT NOT NULL,
+                media_url TEXT,
+                media_type TEXT,
+                media_id TEXT,
+                scheduled_at TIMESTAMPTZ,
+                posted_at TIMESTAMPTZ,
+                status TEXT NOT NULL DEFAULT 'draft',
+                external_id TEXT,
+                external_url TEXT,
+                engagement_metrics JSONB,
+                amplification_status TEXT DEFAULT 'none',
+                amplification_replies_count INTEGER DEFAULT 0,
+                error_message TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            );''',
+            'CREATE INDEX IF NOT EXISTS idx_broadcast_product_status ON broadcast_posts(product_id, status);',
+            'CREATE INDEX IF NOT EXISTS idx_broadcast_product_scheduled ON broadcast_posts(product_id, scheduled_at);',
+            'CREATE INDEX IF NOT EXISTS idx_broadcast_campaign ON broadcast_posts(campaign_id);',
+            # Link replies to broadcasts for amplification tracking
+            'ALTER TABLE reply_queue ADD COLUMN IF NOT EXISTS amplifies_broadcast_id UUID;',
+            # Reply templates for content recycling (stored on products)
+            'ALTER TABLE products ADD COLUMN IF NOT EXISTS reply_templates JSONB DEFAULT \'[]\'::jsonb;',
         ]
 
         for sql in migrations:
@@ -72,6 +101,7 @@ app.include_router(metrics.router, prefix="/metrics", tags=["metrics"])
 app.include_router(onboarding.router, prefix="/onboarding", tags=["onboarding"])
 app.include_router(settings.router, prefix="/settings", tags=["settings"])
 app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
+app.include_router(broadcast.router, prefix="/broadcast", tags=["broadcast"])
 
 @app.get("/health")
 def health():

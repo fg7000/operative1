@@ -8,6 +8,7 @@ import { ProductProvider, useProducts } from '@/lib/product-context'
 const nav = [
   { href: '/products', label: 'Products' },
   { href: '/queue', label: 'Queue' },
+  { href: '/broadcast', label: 'Broadcast' },
   { href: '/history', label: 'History' },
   { href: '/analytics', label: 'Analytics' },
   { href: '/settings', label: 'Settings' },

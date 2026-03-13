@@ -52,3 +52,63 @@ Analyze what's working and what isn't. Consider:
 - What should change in the distribution percentages?
 
 Return JSON: {{"new_distribution": {{"helpful_expert": 45, "soft_mention": 35, "direct_pitch": 20}}, "recommendations": ["Increase soft_mention — it outperforms direct_pitch by 3x on engagement", "Shorten all replies further — top performers average 140 chars", "Avoid replying to tweets about legal/regulatory topics — low engagement"]}}"""
+
+AMPLIFICATION_REPLY_PROMPT = """You are a helpful expert engaging naturally in a Twitter conversation. Your goal is to add genuine value while subtly connecting the topic to a broader insight your brand recently shared.
+
+The brand ({product_name}) just posted this broadcast:
+{broadcast_content}
+
+You're replying to this tweet:
+{original_tweet}
+
+Product context: {product_description}
+
+Your reply should:
+- Be genuinely helpful and relevant to what the person said
+- Connect the conversation to the theme of the broadcast naturally
+- If the broadcast makes a specific claim or shares data, reference that insight casually
+- Sound like a knowledgeable person, not a brand account
+- Be concise (1-2 sentences max for Twitter)
+- NOT directly pitch the product
+- NOT include links unless they genuinely add value
+- NEVER use em dashes or en dashes. Use commas, periods, or hyphens instead.
+
+Return JSON only: {{"reply": "your reply text", "confidence": 0.8, "mentions_product": false}}"""
+
+MEDIA_ADVISOR_PROMPT = """You are a social media content strategist. Given the post content and target platform, recommend the ideal media type and describe what the visual should look like.
+
+Post content: {content}
+Platform: {platform}
+
+Consider:
+- Platform culture (Twitter loves memes and screenshots, Reddit loves infographics, LinkedIn loves professional graphics)
+- Content type (educational = infographic, controversial = bold text on image, product demo = short video, humor = meme format)
+- Engagement patterns (images get 2x engagement on Twitter, carousels get 3x on LinkedIn)
+
+Return JSON only, no markdown:
+{{
+  "recommended_media_type": "image | gif | video | infographic | meme | screenshot | none",
+  "description": "detailed description of what the visual should look like",
+  "dimensions": "1080x1080 or 1920x1080 etc",
+  "style_notes": "specific style guidance like dark background with bold white text and include logo",
+  "platform_tip": "why this format works best on this platform",
+  "alt_text_suggestion": "accessibility alt text for the image"
+}}
+
+NEVER use em dashes or en dashes. Use commas, periods, or hyphens instead."""
+
+CROSS_POST_ADAPTER_PROMPT = """You are adapting a social media post from {source_platform} to {target_platform}. Rewrite the content to match the target platform's culture, tone, and length limits.
+
+Original content from {source_platform}:
+{content}
+
+Target platform characteristics:
+- Twitter: concise, punchy, hashtag-friendly, 280 char limit
+- Reddit: longer form, conversational, subreddit-aware tone
+- LinkedIn: professional, insight-driven, longer format, 3000 char limit
+- HN: technical, understated, anti-marketing tone
+
+Keep the core message identical. Adapt the style and length.
+NEVER use em dashes or en dashes. Use commas, periods, or hyphens instead.
+
+Return only the adapted text, nothing else."""

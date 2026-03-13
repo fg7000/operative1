@@ -13,6 +13,7 @@ def start_scheduler():
     from pipelines.engagement import run_engagement_pipeline
     from services.optimizer import run_optimizer, run_keyword_optimizer
     from services.autopilot import run_autopilot_processor
+    from services.broadcast_scheduler import check_scheduled_broadcasts
 
     scheduler.add_job(run_twitter_pipeline, IntervalTrigger(minutes=10), id='twitter', replace_existing=True)
     scheduler.add_job(run_reddit_pipeline, IntervalTrigger(minutes=15), id='reddit', replace_existing=True)
@@ -27,5 +28,9 @@ def start_scheduler():
     # respecting rate limits
     scheduler.add_job(run_autopilot_processor, IntervalTrigger(minutes=2), id='autopilot', replace_existing=True)
 
+    # Broadcast scheduler - runs every 60 seconds to check for scheduled broadcasts
+    # Marks them as 'ready_to_post' for the extension to pick up
+    scheduler.add_job(check_scheduled_broadcasts, IntervalTrigger(seconds=60), id='broadcast_scheduler', replace_existing=True)
+
     scheduler.start()
-    logger.info("Scheduler started — all pipelines active (including autopilot)")
+    logger.info("Scheduler started — all pipelines active (including autopilot and broadcast)")

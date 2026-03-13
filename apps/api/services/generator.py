@@ -43,7 +43,22 @@ def select_reply_mode(product: dict) -> str:
     weights = [dist[m] for m in modes]
     return random.choices(modes, weights=weights, k=1)[0]
 
-async def generate_reply(post: dict, product: dict, platform: str) -> dict:
+def get_relevant_templates(product: dict, platform: str, max_templates: int = 3) -> list:
+    """Get relevant reply templates to inform the generator's tone and style."""
+    templates = product.get('reply_templates') or []
+    if not templates:
+        return []
+
+    # Filter by platform and take most recent
+    platform_templates = [t for t in templates if t.get('platform') == platform]
+    if not platform_templates:
+        platform_templates = templates  # Fall back to all templates
+
+    # Return up to max_templates
+    return platform_templates[:max_templates]
+
+
+async def generate_reply(post: dict, product: dict, platform: str, custom_prompt: str = None) -> dict:
     reply_mode = select_reply_mode(product)
     logger.info(f"Selected reply mode: {reply_mode}")
 
@@ -55,6 +70,13 @@ async def generate_reply(post: dict, product: dict, platform: str) -> dict:
     forbidden = ', '.join(product.get('forbidden_phrases') or [])
     system_prompt = system_prompt.replace('{{forbidden_phrases}}', forbidden)
 
+    # Add template examples to help inform tone and style
+    templates = get_relevant_templates(product, platform)
+    template_section = ""
+    if templates:
+        examples = "\n".join([f"- {t['text']}" for t in templates])
+        template_section = f"\n\nHere are examples of our brand voice and style:\n{examples}\n\nMatch this tone and style, but create original content for this specific reply."
+
     mode_instruction = MODE_INSTRUCTIONS[reply_mode]
     length_instruction = PLATFORM_LENGTH.get(platform, "Be concise and natural.")
 
@@ -64,11 +86,15 @@ async def generate_reply(post: dict, product: dict, platform: str) -> dict:
     if original_language and original_language != 'en':
         language_instruction = f"\n\nIMPORTANT: The original post is in {original_language}. Write your reply in {original_language}, NOT in English."
 
-    user_message = f"""Reply to this {platform} post. {mode_instruction}
+    # Use custom prompt if provided (for amplification replies)
+    if custom_prompt:
+        user_message = custom_prompt
+    else:
+        user_message = f"""Reply to this {platform} post. {mode_instruction}
 
 {length_instruction}
 
-Keep it natural and conversational — no hashtags, no hard sell, no generic filler.{language_instruction}
+Keep it natural and conversational — no hashtags, no hard sell, no generic filler.{language_instruction}{template_section}
 
 Post to reply to:
 {post.get('text', '')}

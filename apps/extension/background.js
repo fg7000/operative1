@@ -29,12 +29,12 @@ async function getTwitterCookies() {
   });
 }
 
-function buildTweetPayload(text, replyToTweetId) {
+function buildTweetPayload(text, replyToTweetId, mediaIds = []) {
   const variables = {
     tweet_text: text,
     dark_request: false,
     media: {
-      media_entities: [],
+      media_entities: mediaIds.map(id => ({ media_id: id, tagged_users: [] })),
       possibly_sensitive: false
     },
     semantic_annotation_ids: []
@@ -80,10 +80,11 @@ function buildTweetPayload(text, replyToTweetId) {
   };
 }
 
-async function postTweet(text, replyToTweetId) {
+async function postTweet(text, replyToTweetId, mediaIds = []) {
   console.log('[Operative1] postTweet called');
   console.log('[Operative1] Reply to tweet ID:', replyToTweetId);
-  console.log('[Operative1] Reply text:', text);
+  console.log('[Operative1] Tweet text:', text);
+  console.log('[Operative1] Media IDs:', mediaIds);
 
   const cookies = await getTwitterCookies();
   console.log('[Operative1] Cookies retrieved:', cookies ? 'yes' : 'no');
@@ -102,7 +103,7 @@ async function postTweet(text, replyToTweetId) {
     'x-twitter-client-language': 'en'
   };
 
-  const payload = buildTweetPayload(text, replyToTweetId);
+  const payload = buildTweetPayload(text, replyToTweetId, mediaIds);
 
   console.log('[Operative1] Request URL:', GRAPHQL_CREATE_TWEET_URL);
   console.log('[Operative1] Request headers:', JSON.stringify(headers, null, 2));
@@ -181,14 +182,106 @@ async function postTweet(text, replyToTweetId) {
   }
 }
 
+// Upload image to Twitter and get media_id
+// Uses the chunked upload API: INIT -> APPEND -> FINALIZE
+async function uploadMediaToTwitter(imageUrl, cookies) {
+  console.log('[Operative1] Starting media upload for:', imageUrl);
+
+  // Fetch the image from the URL
+  const imageResponse = await fetch(imageUrl);
+  if (!imageResponse.ok) {
+    throw new Error(`Failed to fetch image: ${imageResponse.status}`);
+  }
+
+  const imageBlob = await imageResponse.blob();
+  const imageBuffer = await imageBlob.arrayBuffer();
+  const imageBytes = new Uint8Array(imageBuffer);
+
+  console.log('[Operative1] Image fetched, size:', imageBytes.length, 'type:', imageBlob.type);
+
+  const headers = {
+    'authorization': `Bearer ${TWITTER_BEARER}`,
+    'x-csrf-token': cookies.ct0,
+  };
+
+  // Step 1: INIT
+  const initFormData = new FormData();
+  initFormData.append('command', 'INIT');
+  initFormData.append('total_bytes', imageBytes.length.toString());
+  initFormData.append('media_type', imageBlob.type || 'image/jpeg');
+  initFormData.append('media_category', 'tweet_image');
+
+  const initResponse = await fetch('https://upload.twitter.com/i/media/upload.json', {
+    method: 'POST',
+    headers,
+    body: initFormData,
+    credentials: 'include'
+  });
+
+  if (!initResponse.ok) {
+    const errorText = await initResponse.text();
+    console.log('[Operative1] INIT failed:', errorText);
+    throw new Error(`Media INIT failed: ${initResponse.status}`);
+  }
+
+  const initData = await initResponse.json();
+  const mediaId = initData.media_id_string;
+  console.log('[Operative1] INIT success, media_id:', mediaId);
+
+  // Step 2: APPEND (single chunk for images under 5MB)
+  const appendFormData = new FormData();
+  appendFormData.append('command', 'APPEND');
+  appendFormData.append('media_id', mediaId);
+  appendFormData.append('segment_index', '0');
+  appendFormData.append('media', new Blob([imageBytes], { type: imageBlob.type }));
+
+  const appendResponse = await fetch('https://upload.twitter.com/i/media/upload.json', {
+    method: 'POST',
+    headers,
+    body: appendFormData,
+    credentials: 'include'
+  });
+
+  if (!appendResponse.ok) {
+    const errorText = await appendResponse.text();
+    console.log('[Operative1] APPEND failed:', errorText);
+    throw new Error(`Media APPEND failed: ${appendResponse.status}`);
+  }
+
+  console.log('[Operative1] APPEND success');
+
+  // Step 3: FINALIZE
+  const finalizeFormData = new FormData();
+  finalizeFormData.append('command', 'FINALIZE');
+  finalizeFormData.append('media_id', mediaId);
+
+  const finalizeResponse = await fetch('https://upload.twitter.com/i/media/upload.json', {
+    method: 'POST',
+    headers,
+    body: finalizeFormData,
+    credentials: 'include'
+  });
+
+  if (!finalizeResponse.ok) {
+    const errorText = await finalizeResponse.text();
+    console.log('[Operative1] FINALIZE failed:', errorText);
+    throw new Error(`Media FINALIZE failed: ${finalizeResponse.status}`);
+  }
+
+  const finalizeData = await finalizeResponse.json();
+  console.log('[Operative1] FINALIZE success:', JSON.stringify(finalizeData));
+
+  return mediaId;
+}
+
 // Listen for messages from the Operative1 dashboard
 chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
   const action = request.action || request.type;
   console.log('[Operative1] Received message:', action, 'from:', sender.origin);
 
   if (action === 'ping') {
-    console.log('[Operative1] Ping received, responding with version 1.2.0');
-    sendResponse({ success: true, version: '1.2.0' });
+    console.log('[Operative1] Ping received, responding with version 1.3.0');
+    sendResponse({ success: true, version: '1.3.0' });
     return true;
   }
 
@@ -215,6 +308,59 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
     return true; // Keep channel open for async response
   }
 
+  // NEW: Handle broadcast posts (standalone tweets, optionally with media)
+  if (action === 'post_broadcast') {
+    const { content, media_url } = request;
+    console.log('[Operative1] post_broadcast request:', { content: content?.slice(0, 50) + '...', media_url: media_url ? 'yes' : 'no' });
+
+    if (!content) {
+      console.log('[Operative1] ERROR: Missing content');
+      sendResponse({ success: false, error: 'Missing content' });
+      return true;
+    }
+
+    (async () => {
+      try {
+        const cookies = await getTwitterCookies();
+        if (!cookies) {
+          sendResponse({ success: false, error: 'Not logged into Twitter. Please log in at x.com first.' });
+          return;
+        }
+
+        let mediaIds = [];
+
+        // Upload media if provided
+        if (media_url) {
+          try {
+            const mediaId = await uploadMediaToTwitter(media_url, cookies);
+            mediaIds.push(mediaId);
+            console.log('[Operative1] Media uploaded successfully:', mediaId);
+          } catch (mediaError) {
+            console.log('[Operative1] Media upload failed:', mediaError.message);
+            // Ask user if they want to continue without media
+            sendResponse({
+              success: false,
+              error: `Media upload failed: ${mediaError.message}. The tweet was not posted.`,
+              media_failed: true
+            });
+            return;
+          }
+        }
+
+        // Post the tweet (no replyToTweetId for broadcasts)
+        const result = await postTweet(content, null, mediaIds);
+        console.log('[Operative1] post_broadcast result:', JSON.stringify(result));
+        sendResponse(result);
+
+      } catch (e) {
+        console.log('[Operative1] post_broadcast exception:', e.message, e.stack);
+        sendResponse({ success: false, error: e.message });
+      }
+    })();
+
+    return true; // Keep channel open for async response
+  }
+
   if (action === 'check_login') {
     getTwitterCookies()
       .then(cookies => sendResponse({ logged_in: !!cookies }))
@@ -227,4 +373,4 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
   return true;
 });
 
-console.log('[Operative1] Background service worker loaded, version 1.2.0');
+console.log('[Operative1] Background service worker loaded, version 1.3.0');
