@@ -2,6 +2,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-client'
+import { apiFetch } from '@/lib/api'
 
 export default function Home() {
   const router = useRouter()
@@ -12,11 +13,13 @@ export default function Home() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
 
-      const API = process.env.NEXT_PUBLIC_API_URL || 'https://keen-mindfulness-production-970b.up.railway.app'
-      const res = await fetch(`${API}/products/check?user_id=${session.user.id}`)
-      const { has_products } = await res.json()
-
-      router.push(has_products ? '/queue' : '/onboarding')
+      try {
+        const { has_products } = await apiFetch<{has_products: boolean}>(`/products/check?user_id=${session.user.id}`)
+        router.push(has_products ? '/queue' : '/onboarding')
+      } catch {
+        // If check fails, assume no products and go to onboarding
+        router.push('/onboarding')
+      }
     }
     route()
   }, [])

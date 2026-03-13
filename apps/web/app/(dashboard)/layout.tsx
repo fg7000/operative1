@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { ProductProvider, useProducts } from '@/lib/product-context'
+import { apiFetch } from '@/lib/api'
 
 const nav = [
   { href: '/products', label: 'Products' },
@@ -161,11 +162,13 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
 
-      const API = process.env.NEXT_PUBLIC_API_URL || 'https://keen-mindfulness-production-970b.up.railway.app'
-      const res = await fetch(`${API}/products/check?user_id=${session.user.id}`)
-      const { has_products } = await res.json()
-
-      if (!has_products) { router.push('/onboarding'); return }
+      try {
+        const { has_products } = await apiFetch<{has_products: boolean}>(`/products/check?user_id=${session.user.id}`)
+        if (!has_products) { router.push('/onboarding'); return }
+      } catch {
+        // If check fails, redirect to onboarding
+        router.push('/onboarding'); return
+      }
       setAuthed(true)
     }
     check()

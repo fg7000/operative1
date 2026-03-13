@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { useRouter } from 'next/navigation'
+import { apiFetch } from '@/lib/api'
 
 type Message = { role: 'assistant' | 'user', content: string }
 type MentionStrategy = 'website' | 'handle' | 'mix'
@@ -68,16 +69,13 @@ export default function OnboardingPage() {
     const history = [...messages, { role: 'user' as const, content: userMsg }]
     setMessages(history); setLoading(true)
 
-    const API = process.env.NEXT_PUBLIC_API_URL || 'https://keen-mindfulness-production-970b.up.railway.app'
-    const res = await fetch(`${API}/onboarding/chat`, {
+    const data = await apiFetch<{content: {text: string}[]}>('/onboarding/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         system: `You are an onboarding assistant for Operative1. Gather product info conversationally (one question at a time): name, description, value prop, target audience, platforms (Twitter/Reddit/LinkedIn/HN), tone. After 3-4 exchanges respond ONLY with this JSON: {"ready":true,"config":{"name":"","slug":"","description":"","value_prop":"","system_prompt":"","keywords":{"twitter":[],"reddit":[],"hn":[],"linkedin":[]},"tone":"","target_subreddits":[]}}. Be warm and brief until then.`,
         messages: history.map(m => ({ role: m.role, content: m.content }))
       })
     })
-    const data = await res.json()
     const content = data.content[0].text
     try {
       // Strip markdown code fences then extract the JSON object from surrounding text
@@ -199,19 +197,16 @@ export default function OnboardingPage() {
       return
     }
 
-    const API = process.env.NEXT_PUBLIC_API_URL || 'https://keen-mindfulness-production-970b.up.railway.app'
-    const res = await fetch(`${API}/products/create`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: productConfig, user_id: user.id })
-    })
-    if (!res.ok) {
-      const err = await res.text()
-      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err}` }])
+    try {
+      await apiFetch('/products/create', {
+        method: 'POST',
+        body: JSON.stringify({ config: productConfig, user_id: user.id })
+      })
+      router.push('/queue')
+    } catch (e: any) {
+      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${e.message}` }])
       setLoading(false)
-      return
     }
-    router.push('/queue')
   }
 
   return (
