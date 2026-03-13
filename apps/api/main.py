@@ -76,6 +76,12 @@ def run_migrations():
             'ALTER TABLE products ADD COLUMN IF NOT EXISTS reply_templates JSONB DEFAULT \'[]\'::jsonb;',
             # Scheduler salt for anti-pattern human scheduling (unique per product)
             'ALTER TABLE products ADD COLUMN IF NOT EXISTS scheduler_salt TEXT;',
+            # Product mention configuration for replies
+            'ALTER TABLE products ADD COLUMN IF NOT EXISTS website_url TEXT;',
+            'ALTER TABLE products ADD COLUMN IF NOT EXISTS twitter_handle TEXT;',
+            "ALTER TABLE products ADD COLUMN IF NOT EXISTS mention_strategy TEXT DEFAULT 'website';",
+            # Update BurnChat with its mention settings
+            "UPDATE products SET website_url = 'https://burnchat.ai', twitter_handle = '@BurnChatAI', mention_strategy = 'website' WHERE slug = 'burnchat' AND website_url IS NULL;",
         ]
 
         for sql in migrations:

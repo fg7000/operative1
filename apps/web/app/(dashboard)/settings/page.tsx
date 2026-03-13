@@ -21,6 +21,8 @@ type TargetingConfig = {
   max_ai_calls_per_run: number
 }
 
+type MentionStrategy = 'website' | 'handle' | 'mix'
+
 type AutopilotConfig = {
   enabled: boolean
   min_relevance_score: number
@@ -100,6 +102,11 @@ export default function SettingsPage() {
     min_opportunity_score: 10,
     max_ai_calls_per_run: 20,
   })
+
+  // Mention strategy state
+  const [editMentionStrategy, setEditMentionStrategy] = useState<MentionStrategy>('website')
+  const [editWebsiteUrl, setEditWebsiteUrl] = useState('')
+  const [editTwitterHandle, setEditTwitterHandle] = useState('')
 
   const supabase = createClient()
 
@@ -190,6 +197,11 @@ export default function SettingsPage() {
         min_opportunity_score: 10,
         max_ai_calls_per_run: 20,
       })
+
+      // Mention strategy
+      setEditMentionStrategy(selectedProduct.mention_strategy || 'website')
+      setEditWebsiteUrl(selectedProduct.website_url || '')
+      setEditTwitterHandle(selectedProduct.twitter_handle || '')
     }
     setEditing(false)
     setSaveError(null)
@@ -223,6 +235,10 @@ export default function SettingsPage() {
           autopilot: editAutopilot,
           // Targeting
           targeting: editTargeting,
+          // Mention strategy
+          website_url: editWebsiteUrl,
+          twitter_handle: editTwitterHandle,
+          mention_strategy: editMentionStrategy,
         }),
       })
       await refreshProducts()
@@ -398,6 +414,72 @@ export default function SettingsPage() {
                       />
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Product Mention Strategy */}
+              <div style={{borderTop:'1px solid #e8e8e8',paddingTop:'20px'}}>
+                <label style={{display:'block',fontSize:'12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'12px'}}>Product Mention in Replies</label>
+                <p style={{fontSize:'12px',color:'#666',marginBottom:'12px'}}>
+                  How should we link to your product when generating replies?
+                </p>
+
+                {/* Strategy Selection */}
+                <div style={{display:'flex',gap:'8px',marginBottom:'16px'}}>
+                  {[
+                    { key: 'website', label: 'Website link', desc: 'Recommended' },
+                    { key: 'handle', label: 'Twitter profile', desc: '' },
+                    { key: 'mix', label: 'Mix of both', desc: '' },
+                  ].map(opt => (
+                    <button key={opt.key} type="button"
+                      onClick={() => setEditMentionStrategy(opt.key as MentionStrategy)}
+                      style={{
+                        flex:1,padding:'10px',borderRadius:'8px',fontSize:'12px',fontWeight:500,
+                        border: editMentionStrategy === opt.key ? '2px solid #111' : '1px solid #e0e0e0',
+                        background: editMentionStrategy === opt.key ? '#f5f5f5' : '#fff',
+                        color:'#111',cursor:'pointer',textAlign:'center'
+                      }}>
+                      {opt.label}
+                      {opt.desc && <span style={{display:'block',fontSize:'10px',color:'#666',marginTop:'2px'}}>{opt.desc}</span>}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Input fields */}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}}>
+                  <div>
+                    <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>
+                      Website URL {(editMentionStrategy === 'website' || editMentionStrategy === 'mix') && <span style={{color:'#e53935'}}>*</span>}
+                    </label>
+                    <input
+                      type="text"
+                      value={editWebsiteUrl}
+                      onChange={(e) => setEditWebsiteUrl(e.target.value)}
+                      placeholder="e.g. burnchat.ai"
+                      style={{width:'100%',padding:'8px 10px',borderRadius:'6px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                    />
+                    <div style={{fontSize:'10px',color:'#999',marginTop:'4px'}}>Becomes a clickable link</div>
+                  </div>
+                  <div>
+                    <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>
+                      Twitter Handle {(editMentionStrategy === 'handle' || editMentionStrategy === 'mix') && <span style={{color:'#e53935'}}>*</span>}
+                    </label>
+                    <input
+                      type="text"
+                      value={editTwitterHandle}
+                      onChange={(e) => setEditTwitterHandle(e.target.value)}
+                      placeholder="e.g. @BurnChatAI"
+                      style={{width:'100%',padding:'8px 10px',borderRadius:'6px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                    />
+                    <div style={{fontSize:'10px',color:'#999',marginTop:'4px'}}>Links to your profile</div>
+                  </div>
+                </div>
+
+                {/* Explanation */}
+                <div style={{padding:'10px',background:'#f8f9fa',borderRadius:'6px',fontSize:'11px',color:'#666',marginTop:'12px'}}>
+                  {editMentionStrategy === 'website' && "Website: People tap and go straight to your product. Best for conversions."}
+                  {editMentionStrategy === 'handle' && "Twitter: Links to your profile. Good if your profile is optimized for conversions."}
+                  {editMentionStrategy === 'mix' && "Mix: Randomly alternate. Mostly website links (70%), sometimes your Twitter handle (30%)."}
                 </div>
               </div>
 
@@ -714,6 +796,22 @@ export default function SettingsPage() {
                   ))}
                 </div>
               </div>
+              {(selectedProduct.website_url || selectedProduct.twitter_handle) && (
+                <div>
+                  <div style={{fontSize:'12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'8px'}}>Product Mention</div>
+                  <div style={{padding:'12px',background:'#f8f9fa',borderRadius:'8px'}}>
+                    <div style={{fontSize:'12px',color:'#666',marginBottom:'6px'}}>
+                      Strategy: <span style={{fontWeight:500,color:'#111',textTransform:'capitalize'}}>{selectedProduct.mention_strategy || 'website'}</span>
+                    </div>
+                    {selectedProduct.website_url && (
+                      <div style={{fontSize:'12px',color:'#666'}}>Website: <span style={{fontWeight:500,color:'#111'}}>{selectedProduct.website_url}</span></div>
+                    )}
+                    {selectedProduct.twitter_handle && (
+                      <div style={{fontSize:'12px',color:'#666',marginTop:'4px'}}>Twitter: <span style={{fontWeight:500,color:'#111'}}>{selectedProduct.twitter_handle}</span></div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

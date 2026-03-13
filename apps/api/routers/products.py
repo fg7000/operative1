@@ -62,6 +62,7 @@ class UpdateProductRequest(BaseModel):
     - max_replies_per_day: 1-100 per platform
     - max_replies_per_hour: 1-20 per platform
     - min_delay_between_posts: 30-3600 seconds
+    - mention_strategy: website, handle, or mix
     """
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
@@ -86,6 +87,11 @@ class UpdateProductRequest(BaseModel):
 
     # Tweet targeting thresholds (Part 2)
     targeting: Optional[TargetingConfig] = None
+
+    # Product mention configuration
+    website_url: Optional[str] = Field(None, max_length=200)
+    twitter_handle: Optional[str] = Field(None, max_length=50)
+    mention_strategy: Optional[str] = Field(None, pattern='^(website|handle|mix)$')
 
     @validator('keywords')
     def validate_keywords(cls, v):
@@ -294,6 +300,10 @@ async def create_product(body: CreateProductRequest):
             "min_opportunity_score": 10,
             "max_ai_calls_per_run": 20,
         },
+        # Product mention configuration (from onboarding)
+        "website_url": config.get('website_url'),
+        "twitter_handle": config.get('twitter_handle'),
+        "mention_strategy": config.get('mention_strategy', 'website'),
     }
     res = supabase.table('products').insert(row).execute()
     return res.data[0] if res.data else {"error": "insert failed"}
@@ -347,6 +357,14 @@ async def update_product(
         update_data['autopilot'] = body.autopilot.dict(exclude_none=True)
     if body.targeting is not None:
         update_data['targeting'] = body.targeting.dict(exclude_none=True)
+
+    # Product mention configuration
+    if body.website_url is not None:
+        update_data['website_url'] = body.website_url
+    if body.twitter_handle is not None:
+        update_data['twitter_handle'] = body.twitter_handle
+    if body.mention_strategy is not None:
+        update_data['mention_strategy'] = body.mention_strategy
 
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")

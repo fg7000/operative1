@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase-client'
 import { useRouter } from 'next/navigation'
 
 type Message = { role: 'assistant' | 'user', content: string }
+type MentionStrategy = 'website' | 'handle' | 'mix'
 
 export default function OnboardingPage() {
   const [messages, setMessages] = useState<Message[]>([
@@ -13,6 +14,11 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
   const [productConfig, setProductConfig] = useState<any>(null)
+  // Mention strategy step
+  const [showMentionStep, setShowMentionStep] = useState(false)
+  const [mentionStrategy, setMentionStrategy] = useState<MentionStrategy>('website')
+  const [websiteUrl, setWebsiteUrl] = useState('')
+  const [twitterHandle, setTwitterHandle] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
   const supabase = createClient()
@@ -49,15 +55,15 @@ export default function OnboardingPage() {
       const parsed = JSON.parse(jsonContent)
       if (parsed.ready && parsed.config) {
         const config = parsed.config
-        // Set both before rendering so the Launch button appears
+        // Set config and show mention step
         setProductConfig(config)
-        setDone(true)
+        setShowMentionStep(true)
         // Build a friendly confirmation message
         const keywordCount = Object.values(config.keywords || {}).flat().length
         const tone = config.tone || 'professional'
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: `All set! I've configured ${config.name} with ${keywordCount} keywords and a ${tone} tone.\n\nReady to launch?`
+          content: `Great! I've configured ${config.name} with ${keywordCount} keywords and a ${tone} tone.\n\nOne more thing — how should we link to your product in replies?`
         }])
         setLoading(false)
         return
@@ -65,6 +71,37 @@ export default function OnboardingPage() {
     } catch {}
     setMessages(prev => [...prev, { role: 'assistant', content: content }])
     setLoading(false)
+  }
+
+  function confirmMentionStrategy() {
+    // Validate based on selected strategy
+    if (mentionStrategy === 'website' && !websiteUrl.trim()) {
+      alert('Please enter your website URL')
+      return
+    }
+    if (mentionStrategy === 'handle' && !twitterHandle.trim()) {
+      alert('Please enter your Twitter handle')
+      return
+    }
+    if (mentionStrategy === 'mix' && (!websiteUrl.trim() || !twitterHandle.trim())) {
+      alert('Please enter both your website URL and Twitter handle')
+      return
+    }
+
+    // Add mention settings to config
+    const updatedConfig = {
+      ...productConfig,
+      website_url: websiteUrl.trim(),
+      twitter_handle: twitterHandle.trim().startsWith('@') ? twitterHandle.trim() : `@${twitterHandle.trim()}`,
+      mention_strategy: mentionStrategy,
+    }
+    setProductConfig(updatedConfig)
+    setShowMentionStep(false)
+    setDone(true)
+    setMessages(prev => [...prev, {
+      role: 'assistant',
+      content: `Perfect! Your product mentions will use ${mentionStrategy === 'website' ? 'your website link' : mentionStrategy === 'handle' ? 'your Twitter handle' : 'a mix of both'}.\n\nReady to launch?`
+    }])
   }
 
   async function launchProduct() {
@@ -133,13 +170,72 @@ export default function OnboardingPage() {
 
       <div style={{background:'#fff',borderTop:'1px solid #e8e8e8',padding:'16px'}}>
         <div style={{maxWidth:'560px',margin:'0 auto'}}>
-          {done && productConfig ? (
+          {showMentionStep ? (
+            <div style={{display:'flex',flexDirection:'column',gap:'16px'}}>
+              {/* Strategy Selection */}
+              <div style={{display:'flex',gap:'8px'}}>
+                {[
+                  { key: 'website', label: 'Website link', desc: 'Recommended' },
+                  { key: 'handle', label: 'Twitter profile', desc: '' },
+                  { key: 'mix', label: 'Mix of both', desc: '' },
+                ].map(opt => (
+                  <button key={opt.key}
+                    onClick={() => setMentionStrategy(opt.key as MentionStrategy)}
+                    style={{
+                      flex:1,padding:'12px',borderRadius:'10px',fontSize:'13px',fontWeight:500,
+                      border: mentionStrategy === opt.key ? '2px solid #111' : '1px solid #e0e0e0',
+                      background: mentionStrategy === opt.key ? '#f5f5f5' : '#fff',
+                      color:'#111',cursor:'pointer',textAlign:'center'
+                    }}>
+                    {opt.label}
+                    {opt.desc && <span style={{display:'block',fontSize:'10px',color:'#666',marginTop:'2px'}}>{opt.desc}</span>}
+                  </button>
+                ))}
+              </div>
+
+              {/* Input fields based on strategy */}
+              {(mentionStrategy === 'website' || mentionStrategy === 'mix') && (
+                <div>
+                  <label style={{display:'block',fontSize:'12px',color:'#666',marginBottom:'4px'}}>
+                    Website URL <span style={{color:'#999'}}>(becomes a clickable link)</span>
+                  </label>
+                  <input type="text" value={websiteUrl} onChange={e => setWebsiteUrl(e.target.value)}
+                    placeholder="e.g. burnchat.ai"
+                    style={{width:'100%',padding:'10px 14px',borderRadius:'8px',border:'1px solid #e0e0e0',fontSize:'14px',outline:'none'}}
+                  />
+                </div>
+              )}
+              {(mentionStrategy === 'handle' || mentionStrategy === 'mix') && (
+                <div>
+                  <label style={{display:'block',fontSize:'12px',color:'#666',marginBottom:'4px'}}>
+                    Twitter handle <span style={{color:'#999'}}>(links to your profile)</span>
+                  </label>
+                  <input type="text" value={twitterHandle} onChange={e => setTwitterHandle(e.target.value)}
+                    placeholder="e.g. @BurnChatAI"
+                    style={{width:'100%',padding:'10px 14px',borderRadius:'8px',border:'1px solid #e0e0e0',fontSize:'14px',outline:'none'}}
+                  />
+                </div>
+              )}
+
+              {/* Explanation */}
+              <div style={{padding:'12px',background:'#f8f9fa',borderRadius:'8px',fontSize:'12px',color:'#666',lineHeight:1.5}}>
+                {mentionStrategy === 'website' && "People tap your website link and go straight to your product."}
+                {mentionStrategy === 'handle' && "Links to your Twitter profile. Good if your profile is optimized for conversions."}
+                {mentionStrategy === 'mix' && "We'll randomly alternate. Mostly website links (70%), sometimes your Twitter handle (30%)."}
+              </div>
+
+              <button onClick={confirmMentionStrategy}
+                style={{padding:'13px',borderRadius:'10px',background:'#111',color:'#fff',fontSize:'14px',fontWeight:600,border:'none',cursor:'pointer'}}>
+                Continue
+              </button>
+            </div>
+          ) : done && productConfig ? (
             <div style={{display:'flex',gap:'10px'}}>
               <button onClick={launchProduct} disabled={loading}
                 style={{flex:1,padding:'13px',borderRadius:'10px',background:'#111',color:'#fff',fontSize:'14px',fontWeight:600,border:'none',cursor:'pointer',opacity:loading?0.5:1}}>
                 Launch {productConfig.name}
               </button>
-              <button onClick={() => setDone(false)}
+              <button onClick={() => { setDone(false); setShowMentionStep(true) }}
                 style={{padding:'13px 20px',borderRadius:'10px',background:'#fff',color:'#111',fontSize:'14px',fontWeight:500,border:'1px solid #e0e0e0',cursor:'pointer'}}>
                 Edit
               </button>
