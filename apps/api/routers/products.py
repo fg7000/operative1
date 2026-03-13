@@ -272,14 +272,14 @@ async def create_product(body: CreateProductRequest):
     # Missing columns (autopilot, targeting, posting_hours, max_replies_per_day,
     # max_replies_per_hour, min_delay_between_posts) will be added via migration later
     row = {
-        "name": config.get('name'),
-        "slug": config.get('slug'),
-        "description": config.get('description'),
-        "value_prop": config.get('value_prop'),
-        "system_prompt": config.get('system_prompt'),
+        "name": config.get('name', 'Untitled Product'),
+        "slug": config.get('slug', 'untitled'),
+        "description": config.get('description', ''),
+        "value_prop": config.get('value_prop') or config.get('description', ''),  # Fallback to description
+        "system_prompt": config.get('system_prompt', ''),
         "keywords": config.get('keywords', {}),
         "target_subreddits": config.get('target_subreddits', []),
-        "tone": config.get('tone'),
+        "tone": config.get('tone', 'professional'),
         "user_id": body.user_id,
         "auto_post": {"twitter": False, "reddit": False, "linkedin": False, "hn": False},
         "max_daily_replies": {"twitter": 5, "reddit": 3, "linkedin": 3, "hn": 1},
