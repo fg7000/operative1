@@ -74,6 +74,8 @@ def run_migrations():
             'ALTER TABLE reply_queue ADD COLUMN IF NOT EXISTS amplifies_broadcast_id UUID;',
             # Reply templates for content recycling (stored on products)
             'ALTER TABLE products ADD COLUMN IF NOT EXISTS reply_templates JSONB DEFAULT \'[]\'::jsonb;',
+            # Scheduler salt for anti-pattern human scheduling (unique per product)
+            'ALTER TABLE products ADD COLUMN IF NOT EXISTS scheduler_salt TEXT;',
         ]
 
         for sql in migrations:

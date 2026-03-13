@@ -183,6 +183,9 @@ async def process_global_queue(user_id: str) -> dict:
     This is called by the autopilot processor after checking per-product limits.
     It enforces the global posting cadence across all products.
 
+    Uses the human scheduler to only post during organic-looking time windows.
+    Posts outside these windows stay in auto_approved state for later.
+
     Returns:
         {
             'posted': bool,
@@ -217,6 +220,35 @@ async def process_global_queue(user_id: str) -> dict:
     item = item_res.data[0]
     queue_id = item['id']
     platform = item['platform']
+    product_id = item['product_id']
+
+    # Get product for autopilot settings and poster
+    product_res = supabase.table('products').select('*') \
+        .eq('id', product_id) \
+        .single() \
+        .execute()
+    product = product_res.data if product_res.data else {}
+    autopilot_config = product.get('autopilot') or {}
+
+    # Check if human schedule is enabled (defaults to True for organic posting)
+    use_human_schedule = autopilot_config.get('use_human_schedule', True)
+
+    if use_human_schedule:
+        # Check human scheduler - only post during organic-looking windows
+        from services.human_scheduler import should_post_now
+        try:
+            in_window = await should_post_now(product_id, platform, tolerance_minutes=5)
+            if not in_window:
+                logger.debug(f"Human scheduler: not in posting window for product {product_id[:8]}")
+                return {
+                    'posted': False,
+                    'reason': 'outside_human_schedule_window',
+                    'queue_id': queue_id
+                }
+            logger.info(f"Human scheduler: in posting window for product {product_id[:8]}")
+        except Exception as e:
+            # If scheduler fails, fall back to posting (don't block on scheduler errors)
+            logger.warning(f"Human scheduler error: {e} - falling back to immediate post")
 
     # Post based on platform
     from services.poster import post_to_twitter
@@ -230,13 +262,6 @@ async def process_global_queue(user_id: str) -> dict:
         'id': extract_tweet_id(item.get('original_url', '')),
         'url': item.get('original_url', ''),
     }
-
-    # Get product for the poster
-    product_res = supabase.table('products').select('*') \
-        .eq('id', item['product_id']) \
-        .single() \
-        .execute()
-    product = product_res.data if product_res.data else {}
 
     if platform == 'twitter':
         await post_to_twitter(queue_id, reply_data, original_post, product)
