@@ -65,12 +65,20 @@ async def run_twitter_pipeline():
             # Initialize stats tracking for this product run
             stats = PipelineStats(product['id'], 'twitter')
 
-            keywords = product.get('keywords', {}).get('twitter', [])
-            logger.info(f"Product {product.get('name')}: {len(keywords)} twitter keywords")
+            all_keywords = product.get('keywords', {}).get('twitter', [])
+            # Limit to 10 keywords per run to control Apify costs
+            # ($0.03 per search × 10 keywords × 12 runs/day = $3.60/day)
+            keywords = all_keywords[:10]
+            logger.info(f"Product {product.get('name')}: using {len(keywords)}/{len(all_keywords)} twitter keywords")
             if not keywords:
                 await save_pipeline_run(stats)
                 continue
             tweets = await fetch_tweets(keywords)
+
+            # Log cost estimate for this run
+            cost_per_search = 0.03
+            estimated_cost = len(keywords) * cost_per_search
+            logger.info(f"Pipeline cost estimate: {len(keywords)} searches × ${cost_per_search} = ${estimated_cost:.2f}")
             stats.tweets_fetched = len(tweets)
             logger.info(f"Fetched {len(tweets)} tweets for {product.get('name')}")
 
