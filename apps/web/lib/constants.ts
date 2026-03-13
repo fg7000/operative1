@@ -1,6 +1,6 @@
 // Shared constants for Operative1 dashboard
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://keen-mindfulness-production-970b.up.railway.app'
 
 export const PLATFORM_COLORS: Record<string, string> = {
   twitter: '#000',

@@ -25,7 +25,7 @@ export default function OnboardingPage() {
     const history = [...messages, { role: 'user' as const, content: userMsg }]
     setMessages(history); setLoading(true)
 
-    const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+    const API = process.env.NEXT_PUBLIC_API_URL || 'https://keen-mindfulness-production-970b.up.railway.app'
     const res = await fetch(`${API}/onboarding/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -71,7 +71,7 @@ export default function OnboardingPage() {
     if (!productConfig) return
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+    const API = process.env.NEXT_PUBLIC_API_URL || 'https://keen-mindfulness-production-970b.up.railway.app'
     const res = await fetch(`${API}/products/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
