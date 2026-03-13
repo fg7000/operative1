@@ -58,6 +58,9 @@ async def list_pending(
     """
     List pending queue items for a specific product.
 
+    Sorted by: reply_mode priority (direct_pitch > soft_mention > helpful_expert),
+    then by relevance score descending.
+
     product_id is REQUIRED to prevent data leaks.
     """
     from services.database import supabase
@@ -68,7 +71,19 @@ async def list_pending(
     await verify_product_ownership(user_id, product_id)
 
     res = supabase.table('reply_queue').select('*').eq('product_id', product_id).eq('status', 'pending').order('created_at', desc=True).execute()
-    return res.data
+    items = res.data or []
+
+    # Sort by reply_mode priority, then by relevance score
+    MODE_PRIORITY = {'direct_pitch': 0, 'soft_mention': 1, 'helpful_expert': 2}
+
+    def sort_key(item):
+        metrics = item.get('engagement_metrics') or {}
+        mode = metrics.get('reply_mode', 'helpful_expert')
+        mode_rank = MODE_PRIORITY.get(mode, 3)
+        relevance = metrics.get('relevance_score', 0) or 0
+        return (mode_rank, -relevance)  # Lower mode_rank first, higher relevance first
+
+    return sorted(items, key=sort_key)
 
 
 @router.get("/history")
@@ -124,6 +139,50 @@ async def clear_seen(
     deleted = len(res.data) if res.data else 0
     logger.info(f"Cleared {deleted} twitter seen posts")
     return {"status": "cleared", "deleted": deleted}
+
+
+@router.post("/cleanup-errors")
+async def cleanup_errors(
+    product_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Mark pending items with errors (like 226 automation detection) as failed.
+
+    Items that already have error messages in rejection_reason should not
+    remain in pending status - they belong in the failed category.
+    """
+    from services.database import supabase
+
+    await verify_product_ownership(user_id, product_id)
+
+    # Find pending items that have error indicators
+    res = supabase.table('reply_queue').select('id,rejection_reason,engagement_metrics').eq('product_id', product_id).eq('status', 'pending').execute()
+
+    cleanup_count = 0
+    for item in res.data or []:
+        reason = item.get('rejection_reason') or ''
+        metrics = item.get('engagement_metrics') or {}
+        error_msg = metrics.get('error') or ''
+
+        # Check for error indicators
+        has_error = (
+            '226' in reason or
+            '226' in error_msg or
+            'automated' in reason.lower() or
+            'automated' in error_msg.lower() or
+            (reason and len(reason) > 0)  # Any rejection_reason on pending item
+        )
+
+        if has_error:
+            supabase.table('reply_queue').update({
+                'status': 'failed',
+                'rejection_reason': reason or error_msg or 'Auto-cleaned: had error in pending state'
+            }).eq('id', item['id']).execute()
+            cleanup_count += 1
+            logger.info(f"Cleaned up item {item['id']}: {reason or error_msg}")
+
+    return {"status": "cleaned", "items_moved_to_failed": cleanup_count}
 
 
 @router.post("/test-twitter-pipeline")

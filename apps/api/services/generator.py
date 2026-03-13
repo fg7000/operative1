@@ -37,7 +37,7 @@ PLATFORM_LENGTH = {
 
 def select_reply_mode(product: dict) -> str:
     dist = product.get('auto_post', {}).get('reply_mode_distribution', {
-        'helpful_expert': 50, 'soft_mention': 30, 'direct_pitch': 20
+        'direct_pitch': 50, 'soft_mention': 35, 'helpful_expert': 15
     })
     modes = list(dist.keys())
     weights = [dist[m] for m in modes]

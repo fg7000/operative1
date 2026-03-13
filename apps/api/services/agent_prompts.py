@@ -51,7 +51,7 @@ Analyze what's working and what isn't. Consider:
 - What tone patterns appear in the highest-performing replies?
 - What should change in the distribution percentages?
 
-Return JSON: {{"new_distribution": {{"helpful_expert": 45, "soft_mention": 35, "direct_pitch": 20}}, "recommendations": ["Increase soft_mention — it outperforms direct_pitch by 3x on engagement", "Shorten all replies further — top performers average 140 chars", "Avoid replying to tweets about legal/regulatory topics — low engagement"]}}"""
+Return JSON: {{"new_distribution": {{"direct_pitch": 55, "soft_mention": 30, "helpful_expert": 15}}, "recommendations": ["Increase direct_pitch — it drives 2x more conversions than soft_mention", "Keep replies punchy under 150 chars", "Avoid replying to tweets about legal/regulatory topics — low engagement"]}}"""
 
 AMPLIFICATION_REPLY_PROMPT = """You are a helpful expert engaging naturally in a Twitter conversation. Your goal is to add genuine value while subtly connecting the topic to a broader insight your brand recently shared.
 

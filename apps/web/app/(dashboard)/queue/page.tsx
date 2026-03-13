@@ -39,6 +39,7 @@ export default function QueuePage() {
   const [ranking, setRanking] = useState(false)
   const [rankNotes, setRankNotes] = useState<Record<string,string>>({})
   const [extensionConnected, setExtensionConnected] = useState<boolean | null>(null)
+  const [cleaning, setCleaning] = useState(false)
   const [itemStatuses, setItemStatuses] = useState<Record<string, ItemStatus>>({})
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -129,6 +130,19 @@ export default function QueuePage() {
       }
     } catch (e) { console.error('Rank error:', e) }
     setRanking(false)
+  }
+
+  async function cleanupErrors() {
+    if (!selectedProductId) return
+    setCleaning(true)
+    try {
+      const data = await apiFetch<{items_moved_to_failed: number}>(`/queue/cleanup-errors?product_id=${selectedProductId}`, { method: 'POST' })
+      if (data.items_moved_to_failed > 0) {
+        // Refresh queue to remove cleaned items
+        await fetchQueue()
+      }
+    } catch (e) { console.error('Cleanup error:', e) }
+    setCleaning(false)
   }
 
   function extractTweetId(url: string): string {
@@ -314,6 +328,10 @@ export default function QueuePage() {
           <button onClick={smartRank} disabled={ranking || items.length === 0}
             style={{fontSize:'13px',color:'#111',background:'#fff',border:'1px solid #e0e0e0',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:600,opacity:ranking?0.5:1}}>
             {ranking ? 'Ranking...' : 'Smart Rank'}
+          </button>
+          <button onClick={cleanupErrors} disabled={cleaning || items.length === 0}
+            style={{fontSize:'13px',color:'#c62828',background:'#fff',border:'1px solid #ffcdd2',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500,opacity:cleaning?0.5:1}}>
+            {cleaning ? 'Cleaning...' : 'Clean Errors'}
           </button>
           <button onClick={fetchQueue} style={{fontSize:'13px',color:'#666',background:'#f5f5f5',border:'none',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500}}>Refresh</button>
         </div>

@@ -267,7 +267,7 @@ async def create_product(body: CreateProductRequest):
         "user_id": body.user_id,
         "auto_post": {"twitter": False, "reddit": False, "linkedin": False, "hn": False},
         "max_daily_replies": {"twitter": 5, "reddit": 3, "linkedin": 3, "hn": 1},
-        "reply_mode_distribution": {"helpful_expert": 60, "soft_mention": 30, "direct_pitch": 10},
+        "reply_mode_distribution": {"direct_pitch": 50, "soft_mention": 35, "helpful_expert": 15},
         "active": True,
         # Fire rate control defaults (Part 2)
         "max_replies_per_day": {"twitter": 10, "reddit": 5, "linkedin": 5, "hn": 2},

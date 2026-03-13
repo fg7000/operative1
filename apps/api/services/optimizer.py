@@ -57,7 +57,7 @@ async def run_optimizer():
                 }
 
             current_dist = product.get('auto_post', {}).get('reply_mode_distribution', {
-                'helpful_expert': 50, 'soft_mention': 30, 'direct_pitch': 20
+                'direct_pitch': 50, 'soft_mention': 35, 'helpful_expert': 15
             })
 
             prompt = OPTIMIZER_PROMPT.format(
