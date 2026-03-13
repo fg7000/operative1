@@ -25,6 +25,33 @@ class CreateProductRequest(BaseModel):
     user_id: str
 
 
+class TargetingConfig(BaseModel):
+    """Tweet targeting thresholds for pre-filtering."""
+    max_tweet_age_hours: Optional[int] = Field(None, ge=1, le=168)  # 1h - 1 week
+    min_likes: Optional[int] = Field(None, ge=0, le=1000)
+    min_author_followers: Optional[int] = Field(None, ge=0, le=100000)
+    max_reply_count: Optional[int] = Field(None, ge=1, le=1000)
+    min_opportunity_score: Optional[int] = Field(None, ge=0, le=500)
+    max_ai_calls_per_run: Optional[int] = Field(None, ge=1, le=100)
+
+
+class AutopilotConfig(BaseModel):
+    """Autopilot settings for automatic reply approval."""
+    enabled: Optional[bool] = None
+    min_relevance_score: Optional[int] = Field(None, ge=1, le=10)
+    min_confidence: Optional[float] = Field(None, ge=0, le=1)
+    require_no_product_mention: Optional[bool] = None
+
+
+class PostingHoursConfig(BaseModel):
+    """Posting hours configuration."""
+    enabled: Optional[bool] = None
+    timezone: Optional[str] = Field(None, max_length=50)  # e.g., "America/New_York"
+    start_hour: Optional[int] = Field(None, ge=0, le=23)
+    end_hour: Optional[int] = Field(None, ge=0, le=23)
+    days_of_week: Optional[List[int]] = None  # 0=Monday, 6=Sunday
+
+
 class UpdateProductRequest(BaseModel):
     """
     Validation rules:
@@ -32,6 +59,9 @@ class UpdateProductRequest(BaseModel):
     - keywords: max 50 per platform
     - system_prompt: max 2000 chars
     - reply_mode_distribution: must sum to 100
+    - max_replies_per_day: 1-100 per platform
+    - max_replies_per_hour: 1-20 per platform
+    - min_delay_between_posts: 30-3600 seconds
     """
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
@@ -42,6 +72,20 @@ class UpdateProductRequest(BaseModel):
     auto_post: Optional[dict[str, bool]] = None
     max_daily_replies: Optional[dict[str, int]] = None
     active: Optional[bool] = None
+
+    # Fire rate control fields (Part 2)
+    max_replies_per_day: Optional[dict[str, int]] = None
+    max_replies_per_hour: Optional[dict[str, int]] = None
+    min_delay_between_posts: Optional[int] = Field(None, ge=30, le=3600)
+
+    # Posting hours (Part 2)
+    posting_hours: Optional[PostingHoursConfig] = None
+
+    # Autopilot config (Part 2)
+    autopilot: Optional[AutopilotConfig] = None
+
+    # Tweet targeting thresholds (Part 2)
+    targeting: Optional[TargetingConfig] = None
 
     @validator('keywords')
     def validate_keywords(cls, v):
@@ -59,6 +103,34 @@ class UpdateProductRequest(BaseModel):
         total = sum(v.values())
         if total != 100:
             raise ValueError(f'Reply mode distribution must sum to 100, got {total}')
+        return v
+
+    @validator('max_replies_per_day')
+    def validate_max_daily(cls, v):
+        if v is None:
+            return v
+        for platform, count in v.items():
+            if not 1 <= count <= 100:
+                raise ValueError(f'max_replies_per_day must be 1-100, got {count} for {platform}')
+        return v
+
+    @validator('max_replies_per_hour')
+    def validate_max_hourly(cls, v):
+        if v is None:
+            return v
+        for platform, count in v.items():
+            if not 1 <= count <= 20:
+                raise ValueError(f'max_replies_per_hour must be 1-20, got {count} for {platform}')
+        return v
+
+    @validator('posting_hours')
+    def validate_posting_hours(cls, v):
+        if v is None:
+            return v
+        if v.days_of_week is not None:
+            for day in v.days_of_week:
+                if not 0 <= day <= 6:
+                    raise ValueError(f'days_of_week must be 0-6, got {day}')
         return v
 
 
@@ -197,6 +269,31 @@ async def create_product(body: CreateProductRequest):
         "max_daily_replies": {"twitter": 5, "reddit": 3, "linkedin": 3, "hn": 1},
         "reply_mode_distribution": {"helpful_expert": 60, "soft_mention": 30, "direct_pitch": 10},
         "active": True,
+        # Fire rate control defaults (Part 2)
+        "max_replies_per_day": {"twitter": 10, "reddit": 5, "linkedin": 5, "hn": 2},
+        "max_replies_per_hour": {"twitter": 3, "reddit": 2, "linkedin": 2, "hn": 1},
+        "min_delay_between_posts": 120,  # 2 minutes minimum between posts
+        "posting_hours": {
+            "enabled": False,
+            "timezone": "UTC",
+            "start_hour": 9,
+            "end_hour": 21,
+            "days_of_week": [0, 1, 2, 3, 4],  # Monday-Friday
+        },
+        "autopilot": {
+            "enabled": False,
+            "min_relevance_score": 7,
+            "min_confidence": 0.8,
+            "require_no_product_mention": True,
+        },
+        "targeting": {
+            "max_tweet_age_hours": 24,
+            "min_likes": 2,
+            "min_author_followers": 50,
+            "max_reply_count": 100,
+            "min_opportunity_score": 10,
+            "max_ai_calls_per_run": 20,
+        },
     }
     res = supabase.table('products').insert(row).execute()
     return res.data[0] if res.data else {"error": "insert failed"}
@@ -236,6 +333,20 @@ async def update_product(
         update_data['max_daily_replies'] = body.max_daily_replies
     if body.active is not None:
         update_data['active'] = body.active
+
+    # Fire rate control fields (Part 2)
+    if body.max_replies_per_day is not None:
+        update_data['max_replies_per_day'] = body.max_replies_per_day
+    if body.max_replies_per_hour is not None:
+        update_data['max_replies_per_hour'] = body.max_replies_per_hour
+    if body.min_delay_between_posts is not None:
+        update_data['min_delay_between_posts'] = body.min_delay_between_posts
+    if body.posting_hours is not None:
+        update_data['posting_hours'] = body.posting_hours.dict(exclude_none=True)
+    if body.autopilot is not None:
+        update_data['autopilot'] = body.autopilot.dict(exclude_none=True)
+    if body.targeting is not None:
+        update_data['targeting'] = body.targeting.dict(exclude_none=True)
 
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")

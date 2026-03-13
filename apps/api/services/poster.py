@@ -214,10 +214,22 @@ def extract_tweet_id_from_url(url: str) -> str:
 
 
 async def post_to_twitter(queue_id: str, reply_data: dict, original_post: dict, product: dict):
-    """Post to Twitter using the GraphQL API. Updates queue item status in database."""
+    """Post to Twitter using the GraphQL API. Updates queue item status in database.
+
+    Checks rate limits before posting. If rate limited, the queue item stays pending
+    and will be retried by the autopilot processor.
+    """
     from services.database import supabase
+    from services.rate_limiter import can_post
 
     try:
+        # Check rate limits before posting
+        allowed, reason = await can_post(product, 'twitter')
+        if not allowed:
+            logger.info(f"Rate limited for product {product['id']}: {reason}. Queue item {queue_id} stays pending.")
+            # Don't update status - item stays pending for autopilot to retry
+            return
+
         reply_text = reply_data.get('reply', '')
         tweet_url = original_post.get('url', '')
         original_tweet_id = original_post.get('id') or extract_tweet_id_from_url(tweet_url)

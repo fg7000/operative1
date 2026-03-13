@@ -12,6 +12,7 @@ def start_scheduler():
     from pipelines.linkedin import run_linkedin_pipeline
     from pipelines.engagement import run_engagement_pipeline
     from services.optimizer import run_optimizer, run_keyword_optimizer
+    from services.autopilot import run_autopilot_processor
 
     scheduler.add_job(run_twitter_pipeline, IntervalTrigger(minutes=10), id='twitter', replace_existing=True)
     scheduler.add_job(run_reddit_pipeline, IntervalTrigger(minutes=15), id='reddit', replace_existing=True)
@@ -21,5 +22,10 @@ def start_scheduler():
     scheduler.add_job(run_optimizer, IntervalTrigger(weeks=1), id='optimizer', replace_existing=True)
     scheduler.add_job(run_keyword_optimizer, IntervalTrigger(days=1), id='keyword_optimizer', replace_existing=True)
 
+    # Autopilot processor - runs every 2 minutes to process pending queue items
+    # More frequent than main pipelines to quickly post approved items while
+    # respecting rate limits
+    scheduler.add_job(run_autopilot_processor, IntervalTrigger(minutes=2), id='autopilot', replace_existing=True)
+
     scheduler.start()
-    logger.info("Scheduler started — all pipelines active")
+    logger.info("Scheduler started — all pipelines active (including autopilot)")

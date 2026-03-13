@@ -5,13 +5,21 @@ Provides aggregated analytics data for the dashboard.
 
 Endpoints:
 - GET /analytics/dashboard — Full dashboard data for a product (auth + ownership required)
+- GET /analytics/pipeline — Pipeline funnel stats
+- GET /analytics/costs — AI cost breakdown
+- GET /analytics/rate-limits — Current rate limit status
+- GET /analytics/queue-status — Global queue status
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from datetime import datetime, timedelta
+from typing import Optional
 import logging
 
 from services.auth import get_current_user, verify_product_ownership
+from services.analytics import get_pipeline_stats, get_cost_summary
+from services.rate_limiter import get_rate_limit_status
+from services.global_queue import get_global_queue_stats
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -158,3 +166,79 @@ async def get_dashboard(
     except Exception as e:
         logger.error(f"Analytics dashboard error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to load analytics")
+
+
+@router.get("/pipeline")
+async def pipeline_analytics(
+    product_id: Optional[str] = Query(None),
+    platform: Optional[str] = Query(None),
+    days: int = Query(7, ge=1, le=90),
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Get pipeline funnel analytics.
+
+    Shows how many tweets were fetched, filtered, scored, and converted to replies.
+    """
+    if product_id:
+        await verify_product_ownership(user_id, product_id)
+
+    stats = await get_pipeline_stats(product_id=product_id, platform=platform, days=days)
+    return stats
+
+
+@router.get("/costs")
+async def cost_analytics(
+    product_id: Optional[str] = Query(None),
+    days: int = Query(30, ge=1, le=365),
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Get AI cost breakdown.
+
+    Shows estimated costs for translation, scoring, and generation.
+    """
+    if product_id:
+        await verify_product_ownership(user_id, product_id)
+
+    costs = await get_cost_summary(product_id=product_id, days=days)
+    return costs
+
+
+@router.get("/rate-limits")
+async def rate_limit_analytics(
+    product_id: str = Query(...),
+    platform: str = Query("twitter"),
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Get current rate limit status for a product.
+
+    Shows remaining quota, time until next post, etc.
+    """
+    from services.database import supabase
+
+    await verify_product_ownership(user_id, product_id)
+
+    # Get product config
+    res = supabase.table('products').select('*').eq('id', product_id).single().execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    product = res.data
+    rate_status = await get_rate_limit_status(product, platform)
+
+    return rate_status
+
+
+@router.get("/queue-status")
+async def queue_status_analytics(
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Get global queue status for the user's account.
+
+    Shows pending items, next post time, estimated clear time.
+    """
+    stats = await get_global_queue_stats(user_id)
+    return stats

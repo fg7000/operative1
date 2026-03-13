@@ -12,6 +12,46 @@ type TwitterStatus = {
   error?: string
 }
 
+type TargetingConfig = {
+  max_tweet_age_hours: number
+  min_likes: number
+  min_author_followers: number
+  max_reply_count: number
+  min_opportunity_score: number
+  max_ai_calls_per_run: number
+}
+
+type AutopilotConfig = {
+  enabled: boolean
+  min_relevance_score: number
+  min_confidence: number
+  require_no_product_mention: boolean
+}
+
+type PostingHoursConfig = {
+  enabled: boolean
+  timezone: string
+  start_hour: number
+  end_hour: number
+  days_of_week: number[]
+}
+
+const TIMEZONES = [
+  'UTC',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'Asia/Tokyo',
+  'Asia/Singapore',
+  'Australia/Sydney',
+]
+
+const DAYS_OF_WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
 export default function SettingsPage() {
   const { selectedProduct, selectedProductId, refreshProducts, loading: productsLoading } = useProducts()
   const [email, setEmail] = useState<string | null>(null)
@@ -28,6 +68,38 @@ export default function SettingsPage() {
   const [editKeywords, setEditKeywords] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+
+  // Fire rate control state
+  const [editMaxDailyReplies, setEditMaxDailyReplies] = useState<Record<string, number>>({})
+  const [editMaxHourlyReplies, setEditMaxHourlyReplies] = useState<Record<string, number>>({})
+  const [editMinDelay, setEditMinDelay] = useState(120)
+
+  // Posting hours state
+  const [editPostingHours, setEditPostingHours] = useState<PostingHoursConfig>({
+    enabled: false,
+    timezone: 'UTC',
+    start_hour: 9,
+    end_hour: 21,
+    days_of_week: [0, 1, 2, 3, 4],
+  })
+
+  // Autopilot state
+  const [editAutopilot, setEditAutopilot] = useState<AutopilotConfig>({
+    enabled: false,
+    min_relevance_score: 7,
+    min_confidence: 0.8,
+    require_no_product_mention: true,
+  })
+
+  // Targeting state
+  const [editTargeting, setEditTargeting] = useState<TargetingConfig>({
+    max_tweet_age_hours: 24,
+    min_likes: 2,
+    min_author_followers: 50,
+    max_reply_count: 100,
+    min_opportunity_score: 10,
+    max_ai_calls_per_run: 20,
+  })
 
   const supabase = createClient()
 
@@ -86,6 +158,38 @@ export default function SettingsPage() {
         kw[platform] = (keywords || []).join('\n')
       }
       setEditKeywords(kw)
+
+      // Fire rate controls
+      setEditMaxDailyReplies(selectedProduct.max_replies_per_day || { twitter: 10, reddit: 5, linkedin: 5, hn: 2 })
+      setEditMaxHourlyReplies(selectedProduct.max_replies_per_hour || { twitter: 3, reddit: 2, linkedin: 2, hn: 1 })
+      setEditMinDelay(selectedProduct.min_delay_between_posts || 120)
+
+      // Posting hours
+      setEditPostingHours(selectedProduct.posting_hours || {
+        enabled: false,
+        timezone: 'UTC',
+        start_hour: 9,
+        end_hour: 21,
+        days_of_week: [0, 1, 2, 3, 4],
+      })
+
+      // Autopilot
+      setEditAutopilot(selectedProduct.autopilot || {
+        enabled: false,
+        min_relevance_score: 7,
+        min_confidence: 0.8,
+        require_no_product_mention: true,
+      })
+
+      // Targeting
+      setEditTargeting(selectedProduct.targeting || {
+        max_tweet_age_hours: 24,
+        min_likes: 2,
+        min_author_followers: 50,
+        max_reply_count: 100,
+        min_opportunity_score: 10,
+        max_ai_calls_per_run: 20,
+      })
     }
     setEditing(false)
     setSaveError(null)
@@ -109,6 +213,16 @@ export default function SettingsPage() {
           description: editDescription,
           system_prompt: editSystemPrompt,
           keywords,
+          // Fire rate controls
+          max_replies_per_day: editMaxDailyReplies,
+          max_replies_per_hour: editMaxHourlyReplies,
+          min_delay_between_posts: editMinDelay,
+          // Posting hours
+          posting_hours: editPostingHours,
+          // Autopilot
+          autopilot: editAutopilot,
+          // Targeting
+          targeting: editTargeting,
         }),
       })
       await refreshProducts()
@@ -284,6 +398,270 @@ export default function SettingsPage() {
                       />
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Fire Rate Controls */}
+              <div style={{borderTop:'1px solid #e8e8e8',paddingTop:'20px'}}>
+                <label style={{display:'block',fontSize:'12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'12px'}}>Posting Limits</label>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}}>
+                  {['twitter', 'reddit'].map(platform => (
+                    <div key={platform} style={{padding:'12px',background:'#f8f9fa',borderRadius:'8px'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'8px'}}>
+                        <div style={{width:'8px',height:'8px',borderRadius:'50%',background:PLATFORM_COLORS[platform] || '#666'}}/>
+                        <span style={{fontSize:'12px',fontWeight:500,color:'#333',textTransform:'capitalize'}}>{platform}</span>
+                      </div>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+                        <div>
+                          <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Max/Day</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={editMaxDailyReplies[platform] || 10}
+                            onChange={(e) => setEditMaxDailyReplies(prev => ({ ...prev, [platform]: parseInt(e.target.value) || 10 }))}
+                            style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                          />
+                        </div>
+                        <div>
+                          <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Max/Hour</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={20}
+                            value={editMaxHourlyReplies[platform] || 3}
+                            onChange={(e) => setEditMaxHourlyReplies(prev => ({ ...prev, [platform]: parseInt(e.target.value) || 3 }))}
+                            style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{marginTop:'12px'}}>
+                  <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Minimum seconds between posts</label>
+                  <input
+                    type="number"
+                    min={30}
+                    max={3600}
+                    value={editMinDelay}
+                    onChange={(e) => setEditMinDelay(parseInt(e.target.value) || 120)}
+                    style={{width:'120px',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                  />
+                </div>
+              </div>
+
+              {/* Posting Hours */}
+              <div style={{borderTop:'1px solid #e8e8e8',paddingTop:'20px'}}>
+                <div style={{display:'flex',alignItems:'center',gap:'12px',marginBottom:'12px'}}>
+                  <label style={{fontSize:'12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999'}}>Posting Hours</label>
+                  <label style={{display:'flex',alignItems:'center',gap:'6px',cursor:'pointer'}}>
+                    <input
+                      type="checkbox"
+                      checked={editPostingHours.enabled}
+                      onChange={(e) => setEditPostingHours(prev => ({ ...prev, enabled: e.target.checked }))}
+                    />
+                    <span style={{fontSize:'12px',color:'#666'}}>Enable</span>
+                  </label>
+                </div>
+                {editPostingHours.enabled && (
+                  <div style={{padding:'12px',background:'#f8f9fa',borderRadius:'8px'}}>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'12px',marginBottom:'12px'}}>
+                      <div>
+                        <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Timezone</label>
+                        <select
+                          value={editPostingHours.timezone}
+                          onChange={(e) => setEditPostingHours(prev => ({ ...prev, timezone: e.target.value }))}
+                          style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                        >
+                          {TIMEZONES.map(tz => <option key={tz} value={tz}>{tz}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Start Hour</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={23}
+                          value={editPostingHours.start_hour}
+                          onChange={(e) => setEditPostingHours(prev => ({ ...prev, start_hour: parseInt(e.target.value) || 9 }))}
+                          style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                        />
+                      </div>
+                      <div>
+                        <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>End Hour</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={23}
+                          value={editPostingHours.end_hour}
+                          onChange={(e) => setEditPostingHours(prev => ({ ...prev, end_hour: parseInt(e.target.value) || 21 }))}
+                          style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Days of Week</label>
+                      <div style={{display:'flex',gap:'4px'}}>
+                        {DAYS_OF_WEEK.map((day, idx) => (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => {
+                              const days = editPostingHours.days_of_week || []
+                              if (days.includes(idx)) {
+                                setEditPostingHours(prev => ({ ...prev, days_of_week: days.filter(d => d !== idx) }))
+                              } else {
+                                setEditPostingHours(prev => ({ ...prev, days_of_week: [...days, idx].sort() }))
+                              }
+                            }}
+                            style={{
+                              padding:'4px 8px',
+                              borderRadius:'4px',
+                              fontSize:'11px',
+                              border:'1px solid #e0e0e0',
+                              background: (editPostingHours.days_of_week || []).includes(idx) ? '#111' : '#fff',
+                              color: (editPostingHours.days_of_week || []).includes(idx) ? '#fff' : '#666',
+                              cursor:'pointer'
+                            }}
+                          >
+                            {day}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Autopilot */}
+              <div style={{borderTop:'1px solid #e8e8e8',paddingTop:'20px'}}>
+                <div style={{display:'flex',alignItems:'center',gap:'12px',marginBottom:'12px'}}>
+                  <label style={{fontSize:'12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999'}}>Autopilot</label>
+                  <label style={{display:'flex',alignItems:'center',gap:'6px',cursor:'pointer'}}>
+                    <input
+                      type="checkbox"
+                      checked={editAutopilot.enabled}
+                      onChange={(e) => setEditAutopilot(prev => ({ ...prev, enabled: e.target.checked }))}
+                    />
+                    <span style={{fontSize:'12px',color:'#666'}}>Enable</span>
+                  </label>
+                </div>
+                {editAutopilot.enabled && (
+                  <div style={{padding:'12px',background:'#f8f9fa',borderRadius:'8px'}}>
+                    <p style={{fontSize:'12px',color:'#666',marginBottom:'12px'}}>
+                      Automatically approve and post replies that meet these thresholds.
+                    </p>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}}>
+                      <div>
+                        <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Min Relevance Score (1-10)</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={10}
+                          value={editAutopilot.min_relevance_score}
+                          onChange={(e) => setEditAutopilot(prev => ({ ...prev, min_relevance_score: parseInt(e.target.value) || 7 }))}
+                          style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                        />
+                      </div>
+                      <div>
+                        <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Min Confidence (0-1)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={1}
+                          step={0.1}
+                          value={editAutopilot.min_confidence}
+                          onChange={(e) => setEditAutopilot(prev => ({ ...prev, min_confidence: parseFloat(e.target.value) || 0.8 }))}
+                          style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                        />
+                      </div>
+                    </div>
+                    <label style={{display:'flex',alignItems:'center',gap:'6px',marginTop:'12px',cursor:'pointer'}}>
+                      <input
+                        type="checkbox"
+                        checked={editAutopilot.require_no_product_mention}
+                        onChange={(e) => setEditAutopilot(prev => ({ ...prev, require_no_product_mention: e.target.checked }))}
+                      />
+                      <span style={{fontSize:'12px',color:'#666'}}>Only auto-approve if product is not mentioned</span>
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {/* Tweet Targeting */}
+              <div style={{borderTop:'1px solid #e8e8e8',paddingTop:'20px'}}>
+                <label style={{display:'block',fontSize:'12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'12px'}}>Tweet Targeting</label>
+                <p style={{fontSize:'12px',color:'#666',marginBottom:'12px'}}>
+                  Pre-filter tweets before AI scoring to save costs.
+                </p>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'12px'}}>
+                  <div>
+                    <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Max Age (hours)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={168}
+                      value={editTargeting.max_tweet_age_hours}
+                      onChange={(e) => setEditTargeting(prev => ({ ...prev, max_tweet_age_hours: parseInt(e.target.value) || 24 }))}
+                      style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                    />
+                  </div>
+                  <div>
+                    <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Min Likes</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={1000}
+                      value={editTargeting.min_likes}
+                      onChange={(e) => setEditTargeting(prev => ({ ...prev, min_likes: parseInt(e.target.value) || 2 }))}
+                      style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                    />
+                  </div>
+                  <div>
+                    <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Min Followers</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100000}
+                      value={editTargeting.min_author_followers}
+                      onChange={(e) => setEditTargeting(prev => ({ ...prev, min_author_followers: parseInt(e.target.value) || 50 }))}
+                      style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                    />
+                  </div>
+                  <div>
+                    <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Max Replies</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={editTargeting.max_reply_count}
+                      onChange={(e) => setEditTargeting(prev => ({ ...prev, max_reply_count: parseInt(e.target.value) || 100 }))}
+                      style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                    />
+                  </div>
+                  <div>
+                    <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Min Opportunity</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={500}
+                      value={editTargeting.min_opportunity_score}
+                      onChange={(e) => setEditTargeting(prev => ({ ...prev, min_opportunity_score: parseInt(e.target.value) || 10 }))}
+                      style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                    />
+                  </div>
+                  <div>
+                    <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Max AI Calls/Run</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={editTargeting.max_ai_calls_per_run}
+                      onChange={(e) => setEditTargeting(prev => ({ ...prev, max_ai_calls_per_run: parseInt(e.target.value) || 20 }))}
+                      style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                    />
+                  </div>
                 </div>
               </div>
 

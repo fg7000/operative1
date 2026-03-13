@@ -62,7 +62,14 @@ async def _run_single_search(client: httpx.AsyncClient, query: str, max_items: i
 
 
 def _normalize_tweet(t: dict) -> dict | None:
-    """Normalize a raw Apify tweet into our standard format."""
+    """Normalize a raw Apify tweet into our standard format.
+
+    Extracts all fields needed for pre-filtering and scoring:
+    - Basic: id, text, author, url
+    - Engagement: likes, replies, views, retweets, quotes
+    - Author: followers, following, verified, created_at
+    - Timing: created_at, reply_settings
+    """
     tweet_id = str(
         t.get('id') or
         t.get('tweet_id') or
@@ -78,9 +85,51 @@ def _normalize_tweet(t: dict) -> dict | None:
     if not tweet_id or not text:
         return None
 
+    # Author info - can be nested object or flat fields
+    author_obj = t.get('author', {}) if isinstance(t.get('author'), dict) else {}
+    user_obj = t.get('user', {}) if isinstance(t.get('user'), dict) else {}
+
     author = (
-        t.get('author', {}).get('userName') if isinstance(t.get('author'), dict)
-        else t.get('username') or t.get('user', {}).get('screen_name') or ''
+        author_obj.get('userName') or
+        author_obj.get('username') or
+        t.get('username') or
+        user_obj.get('screen_name') or ''
+    )
+
+    # Author follower count - try multiple field locations
+    author_followers = (
+        author_obj.get('followers') or
+        author_obj.get('followersCount') or
+        author_obj.get('followers_count') or
+        user_obj.get('followers_count') or
+        t.get('author_followers') or
+        0
+    )
+
+    # Author following count
+    author_following = (
+        author_obj.get('following') or
+        author_obj.get('followingCount') or
+        author_obj.get('friends_count') or
+        user_obj.get('friends_count') or
+        0
+    )
+
+    # Author verified status
+    author_verified = (
+        author_obj.get('isVerified') or
+        author_obj.get('verified') or
+        author_obj.get('isBlueVerified') or
+        user_obj.get('verified') or
+        False
+    )
+
+    # Author account creation date
+    author_created_at = (
+        author_obj.get('createdAt') or
+        author_obj.get('created_at') or
+        user_obj.get('created_at') or
+        ''
     )
 
     # Check for reply restrictions - Apify may use various field names
@@ -96,6 +145,31 @@ def _normalize_tweet(t: dict) -> dict | None:
     if isinstance(reply_settings, dict):
         reply_settings = reply_settings.get('type', 'everyone')
 
+    # Views/impressions - Apify may use different field names
+    views = (
+        t.get('viewCount') or
+        t.get('views') or
+        t.get('impressionCount') or
+        t.get('impressions') or
+        0
+    )
+
+    # Retweets
+    retweets = (
+        t.get('retweetCount') or
+        t.get('retweet_count') or
+        t.get('retweets') or
+        0
+    )
+
+    # Quote tweets
+    quotes = (
+        t.get('quoteCount') or
+        t.get('quote_count') or
+        t.get('quotes') or
+        0
+    )
+
     return {
         'id': tweet_id,
         'text': text,
@@ -103,8 +177,16 @@ def _normalize_tweet(t: dict) -> dict | None:
         'url': t.get('url') or t.get('tweetUrl') or f"https://twitter.com/i/web/status/{tweet_id}",
         'likes': t.get('likeCount') or t.get('favorite_count') or t.get('likes') or 0,
         'replies': t.get('replyCount') or t.get('reply_count') or t.get('replies') or 0,
+        'views': views,
+        'retweets': retweets,
+        'quotes': quotes,
         'created_at': t.get('createdAt') or t.get('created_at') or '',
-        'reply_settings': reply_settings
+        'reply_settings': reply_settings,
+        # Author metadata for pre-filtering
+        'author_followers': author_followers,
+        'author_following': author_following,
+        'author_verified': author_verified,
+        'author_created_at': author_created_at,
     }
 
 
