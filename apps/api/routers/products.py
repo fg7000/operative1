@@ -268,40 +268,24 @@ async def create_product(body: CreateProductRequest):
                 keywords[platform] = good  # use only the quality keywords
         config['keywords'] = keywords
 
+    # Only include columns that exist in the database
+    # Missing columns (autopilot, targeting, posting_hours, max_replies_per_day,
+    # max_replies_per_hour, min_delay_between_posts) will be added via migration later
     row = {
-        **config,
+        "name": config.get('name'),
+        "slug": config.get('slug'),
+        "description": config.get('description'),
+        "value_prop": config.get('value_prop'),
+        "system_prompt": config.get('system_prompt'),
+        "keywords": config.get('keywords', {}),
+        "target_subreddits": config.get('target_subreddits', []),
+        "tone": config.get('tone'),
         "user_id": body.user_id,
         "auto_post": {"twitter": False, "reddit": False, "linkedin": False, "hn": False},
         "max_daily_replies": {"twitter": 5, "reddit": 3, "linkedin": 3, "hn": 1},
         "reply_mode_distribution": {"direct_pitch": 50, "soft_mention": 35, "helpful_expert": 15},
         "active": True,
-        # Fire rate control defaults (Part 2)
-        "max_replies_per_day": {"twitter": 10, "reddit": 5, "linkedin": 5, "hn": 2},
-        "max_replies_per_hour": {"twitter": 3, "reddit": 2, "linkedin": 2, "hn": 1},
-        "min_delay_between_posts": 120,  # 2 minutes minimum between posts
-        "posting_hours": {
-            "enabled": False,
-            "timezone": "UTC",
-            "start_hour": 9,
-            "end_hour": 21,
-            "days_of_week": [0, 1, 2, 3, 4],  # Monday-Friday
-        },
-        "autopilot": {
-            "enabled": True,  # ON by default for new products
-            "min_relevance_score": 7,
-            "min_confidence": 0.8,
-            "require_no_product_mention": True,
-            "use_human_schedule": True,  # Use organic posting schedule
-        },
-        "targeting": {
-            "max_tweet_age_hours": 24,
-            "min_likes": 2,
-            "min_author_followers": 50,
-            "max_reply_count": 100,
-            "min_opportunity_score": 10,
-            "max_ai_calls_per_run": 20,
-        },
-        # Product mention configuration (from onboarding)
+        # Product mention configuration
         "website_url": config.get('website_url'),
         "twitter_handle": config.get('twitter_handle'),
         "mention_strategy": config.get('mention_strategy', 'website'),
