@@ -101,14 +101,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Operative1 API", version="0.1.0", lifespan=lifespan)
 
+# Middleware order: LAST added = OUTERMOST (runs first on request)
+# HTTPSRedirectFixMiddleware must be INNER so CORS wraps its redirects
+app.add_middleware(HTTPSRedirectFixMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://operative1.vercel.app",
+        "https://operative1-*.vercel.app",
+        "http://localhost:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(HTTPSRedirectFixMiddleware)
 
 app.include_router(products.router, prefix="/products", tags=["products"])
 app.include_router(queue.router, prefix="/queue", tags=["queue"])
