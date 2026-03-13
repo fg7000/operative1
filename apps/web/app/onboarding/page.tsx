@@ -19,6 +19,9 @@ export default function OnboardingPage() {
   const [mentionStrategy, setMentionStrategy] = useState<MentionStrategy>('website')
   const [websiteUrl, setWebsiteUrl] = useState('')
   const [twitterHandle, setTwitterHandle] = useState('')
+  // Autopilot step
+  const [showAutopilotStep, setShowAutopilotStep] = useState(false)
+  const [autopilotEnabled, setAutopilotEnabled] = useState(true) // ON by default
   const bottomRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
   const supabase = createClient()
@@ -97,10 +100,33 @@ export default function OnboardingPage() {
     }
     setProductConfig(updatedConfig)
     setShowMentionStep(false)
+    setShowAutopilotStep(true)
+    setMessages(prev => [...prev, {
+      role: 'assistant',
+      content: `Perfect! Your product mentions will use ${mentionStrategy === 'website' ? 'your website link' : mentionStrategy === 'handle' ? 'your Twitter handle' : 'a mix of both'}.\n\nOne last thing — let's set up automatic posting.`
+    }])
+  }
+
+  function confirmAutopilot() {
+    // Add autopilot setting to config
+    const updatedConfig = {
+      ...productConfig,
+      autopilot: {
+        enabled: autopilotEnabled,
+        min_relevance_score: 7,
+        min_confidence: 0.8,
+        require_no_product_mention: true,
+        use_human_schedule: true,
+      }
+    }
+    setProductConfig(updatedConfig)
+    setShowAutopilotStep(false)
     setDone(true)
     setMessages(prev => [...prev, {
       role: 'assistant',
-      content: `Perfect! Your product mentions will use ${mentionStrategy === 'website' ? 'your website link' : mentionStrategy === 'handle' ? 'your Twitter handle' : 'a mix of both'}.\n\nReady to launch?`
+      content: autopilotEnabled
+        ? `Autopilot is ON. Operative1 will automatically find relevant conversations and post replies on your schedule.\n\nReady to launch?`
+        : `Autopilot is OFF. You'll manually approve each reply before posting.\n\nReady to launch?`
     }])
   }
 
@@ -225,6 +251,48 @@ export default function OnboardingPage() {
               </div>
 
               <button onClick={confirmMentionStrategy}
+                style={{padding:'13px',borderRadius:'10px',background:'#111',color:'#fff',fontSize:'14px',fontWeight:600,border:'none',cursor:'pointer'}}>
+                Continue
+              </button>
+            </div>
+          ) : showAutopilotStep ? (
+            <div style={{display:'flex',flexDirection:'column',gap:'16px'}}>
+              {/* Autopilot Toggle */}
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px',background:'#f8f9fa',borderRadius:'12px',border:'1px solid #e8e8e8'}}>
+                <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+                  <div style={{width:'10px',height:'10px',borderRadius:'50%',background: autopilotEnabled ? '#22c55e' : '#999',boxShadow: autopilotEnabled ? '0 0 8px rgba(34,197,94,0.5)' : 'none'}}/>
+                  <span style={{fontSize:'15px',fontWeight:600,color:'#111'}}>Autopilot: {autopilotEnabled ? 'ON' : 'OFF'}</span>
+                </div>
+                <button
+                  onClick={() => setAutopilotEnabled(!autopilotEnabled)}
+                  style={{padding:'6px 14px',borderRadius:'6px',fontSize:'12px',fontWeight:500,border:'1px solid #e0e0e0',background:'#fff',color:'#666',cursor:'pointer'}}
+                >
+                  {autopilotEnabled ? 'Turn Off' : 'Turn On'}
+                </button>
+              </div>
+
+              {/* Explanation */}
+              <div style={{padding:'14px',background:'#fff',borderRadius:'10px',border:'1px solid #e8e8e8'}}>
+                <div style={{fontSize:'13px',color:'#111',lineHeight:1.6,marginBottom:'12px'}}>
+                  {autopilotEnabled
+                    ? "Operative1 will automatically find relevant conversations and post replies on your schedule. You can review everything in your queue anytime."
+                    : "You'll review and approve each reply before posting. Replies will wait in your queue for manual approval."}
+                </div>
+                <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                  {autopilotEnabled && (
+                    <>
+                      <div style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'12px',color:'#666'}}>
+                        <span style={{color:'#22c55e'}}>●</span> Keep your dashboard tab open for continuous posting
+                      </div>
+                      <div style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'12px',color:'#666'}}>
+                        <span style={{color:'#999'}}>●</span> Turn off anytime from Settings
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <button onClick={confirmAutopilot}
                 style={{padding:'13px',borderRadius:'10px',background:'#111',color:'#fff',fontSize:'14px',fontWeight:600,border:'none',cursor:'pointer'}}>
                 Continue
               </button>

@@ -287,10 +287,11 @@ async def create_product(body: CreateProductRequest):
             "days_of_week": [0, 1, 2, 3, 4],  # Monday-Friday
         },
         "autopilot": {
-            "enabled": False,
+            "enabled": True,  # ON by default for new products
             "min_relevance_score": 7,
             "min_confidence": 0.8,
             "require_no_product_mention": True,
+            "use_human_schedule": True,  # Use organic posting schedule
         },
         "targeting": {
             "max_tweet_age_hours": 24,

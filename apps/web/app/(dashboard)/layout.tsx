@@ -108,6 +108,48 @@ function ProductSwitcher() {
   )
 }
 
+function AutopilotIndicator() {
+  const { selectedProduct } = useProducts()
+  const isAutopilotActive = selectedProduct?.autopilot?.enabled ?? false
+
+  // Add beforeunload warning when autopilot is active
+  useEffect(() => {
+    if (!isAutopilotActive) return
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = 'Autopilot is running. Closing this tab will pause automatic posting.'
+      return e.returnValue
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [isAutopilotActive])
+
+  if (!isAutopilotActive) return null
+
+  return (
+    <div style={{
+      padding: '8px 12px',
+      margin: '0 12px 8px',
+      background: 'rgba(34, 197, 94, 0.08)',
+      borderRadius: '8px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+    }}>
+      <div style={{
+        width: '8px',
+        height: '8px',
+        borderRadius: '50%',
+        background: '#22c55e',
+        animation: 'autopilotPulse 2s ease-in-out infinite',
+      }}/>
+      <span style={{ fontSize: '12px', fontWeight: 500, color: '#166534' }}>Autopilot active</span>
+    </div>
+  )
+}
+
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -143,6 +185,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           <div style={{fontSize:'11px',fontWeight:700,letterSpacing:'0.2em',textTransform:'uppercase',color:'#111'}}>Operative1</div>
         </div>
         <ProductSwitcher />
+        <AutopilotIndicator />
         <nav style={{flex:1,padding:'8px 12px',display:'flex',flexDirection:'column',gap:'2px'}}>
           {nav.map(n => (
             <Link key={n.href} href={n.href} style={{
@@ -170,6 +213,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <ProductProvider>
       <DashboardShell>{children}</DashboardShell>
+      <style>{`
+        @keyframes autopilotPulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.6; transform: scale(1.2); }
+        }
+      `}</style>
     </ProductProvider>
   )
 }

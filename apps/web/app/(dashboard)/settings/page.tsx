@@ -326,12 +326,26 @@ export default function SettingsPage() {
               </div>
               <div style={{padding:'16px',background:'#f8f9fa',borderRadius:'8px',marginBottom:'12px'}}>
                 <div style={{fontSize:'13px',fontWeight:600,color:'#111',marginBottom:'8px'}}>Connect via Chrome Extension</div>
+                <p style={{fontSize:'13px',color:'#666',lineHeight:1.6,margin:'0 0 12px 0'}}>
+                  The Operative1 Chrome Extension posts replies directly from your browser, so every interaction comes from your authentic account. This ensures your replies appear naturally in conversations, just as if you posted them yourself.
+                </p>
                 <ol style={{fontSize:'13px',color:'#666',lineHeight:1.6,margin:0,paddingLeft:'20px'}}>
                   <li>Install the Operative1 Chrome extension</li>
                   <li>Log in to Twitter/X in your browser</li>
                   <li>Click the extension icon</li>
                   <li>Select this product and click "Connect"</li>
                 </ol>
+                <div style={{marginTop:'12px',display:'flex',flexDirection:'column',gap:'4px'}}>
+                  <div style={{fontSize:'12px',color:'#666',display:'flex',alignItems:'center',gap:'6px'}}>
+                    <span style={{color:'#22c55e'}}>✓</span> Posts from YOUR browser using YOUR session
+                  </div>
+                  <div style={{fontSize:'12px',color:'#666',display:'flex',alignItems:'center',gap:'6px'}}>
+                    <span style={{color:'#22c55e'}}>✓</span> Your credentials never leave your browser
+                  </div>
+                  <div style={{fontSize:'12px',color:'#666',display:'flex',alignItems:'center',gap:'6px'}}>
+                    <span style={{color:'#22c55e'}}>✓</span> Disconnect anytime with one click
+                  </div>
+                </div>
               </div>
               <div style={{fontSize:'12px',color:'#999'}}>
                 Product ID: <code style={{background:'#f0f0f0',padding:'2px 6px',borderRadius:'4px',fontFamily:'monospace'}}>{selectedProductId}</code>
