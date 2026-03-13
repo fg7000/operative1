@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useProducts } from '@/lib/product-context'
 import { PLATFORM_COLORS, MODE_COLORS, API_URL } from '@/lib/constants'
+import { apiFetch } from '@/lib/api'
 
 // Extension ID - set via NEXT_PUBLIC_EXTENSION_ID env var after loading extension in Chrome
 const EXTENSION_ID = process.env.NEXT_PUBLIC_EXTENSION_ID || ''
@@ -97,9 +98,8 @@ export default function QueuePage() {
     if (!selectedProductId) return
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/queue/pending?product_id=${selectedProductId}`)
-      const data = await res.json()
-      setItems(data || [])
+      const data = await apiFetch<QueueItem[]>(`/queue/pending?product_id=${selectedProductId}`)
+      setItems(Array.isArray(data) ? data : [])
       setRankNotes({})
       setItemStatuses({})
     } catch (e) {
@@ -114,8 +114,7 @@ export default function QueuePage() {
     if (!selectedProductId) return
     setRanking(true)
     try {
-      const res = await fetch(`${API_URL}/queue/rank?product_id=${selectedProductId}`, { method: 'POST' })
-      const data = await res.json()
+      const data = await apiFetch<{ranked_ids?: string[], notes?: Record<string,string>}>(`/queue/rank?product_id=${selectedProductId}`, { method: 'POST' })
       if (data.ranked_ids && Array.isArray(data.ranked_ids)) {
         const idOrder = new Map(data.ranked_ids.map((id: string, i: number) => [id, i]))
         setItems(prev => {
@@ -189,9 +188,8 @@ export default function QueuePage() {
 
     if (result.success) {
       // Update backend DB status
-      await fetch(`${API_URL}/queue/${item.id}/mark-posted?product_id=${selectedProductId}`, {
+      await apiFetch(`/queue/${item.id}/mark-posted?product_id=${selectedProductId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ posted_tweet_id: result.tweet_id })
       })
 
@@ -229,8 +227,12 @@ export default function QueuePage() {
   async function reject(id: string) {
     if (!selectedProductId) return
     setActionLoading(id)
-    await fetch(`${API_URL}/queue/${id}/reject?product_id=${selectedProductId}`, { method: 'POST' })
-    setItems(prev => prev.filter(i => i.id !== id))
+    try {
+      await apiFetch(`/queue/${id}/reject?product_id=${selectedProductId}`, { method: 'POST' })
+      setItems(prev => prev.filter(i => i.id !== id))
+    } catch (e) {
+      console.error('Reject error:', e)
+    }
     setActionLoading(null)
   }
 
@@ -251,9 +253,13 @@ export default function QueuePage() {
   async function saveEdit(id: string) {
     if (!selectedProductId) return
     setActionLoading(id)
-    await fetch(`${API_URL}/queue/${id}/edit?product_id=${selectedProductId}&edited_reply=${encodeURIComponent(editText)}`, { method: 'PATCH' })
-    setEditingId(null)
-    setItems(prev => prev.map(i => i.id === id ? { ...i, edited_reply: editText } : i))
+    try {
+      await apiFetch(`/queue/${id}/edit?product_id=${selectedProductId}&edited_reply=${encodeURIComponent(editText)}`, { method: 'PATCH' })
+      setEditingId(null)
+      setItems(prev => prev.map(i => i.id === id ? { ...i, edited_reply: editText } : i))
+    } catch (e) {
+      console.error('Edit error:', e)
+    }
     setActionLoading(null)
   }
 

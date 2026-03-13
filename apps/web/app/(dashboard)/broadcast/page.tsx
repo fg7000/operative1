@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useProducts } from '@/lib/product-context'
 import { PLATFORM_COLORS, API_URL } from '@/lib/constants'
+import { apiFetch } from '@/lib/api'
 
 const EXTENSION_ID = process.env.NEXT_PUBLIC_EXTENSION_ID || ''
 
@@ -129,11 +130,11 @@ export default function BroadcastPage() {
     if (!selectedProductId) return
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/broadcast/list?product_id=${selectedProductId}&limit=100`)
-      const data = await res.json()
-      setBroadcasts(data.items || [])
+      const data = await apiFetch<{items?: Broadcast[]}>(`/broadcast/list?product_id=${selectedProductId}&limit=100`)
+      setBroadcasts(Array.isArray(data?.items) ? data.items : [])
     } catch (e) {
       console.error('Failed to fetch broadcasts:', e)
+      setBroadcasts([])
     } finally {
       setLoading(false)
     }
@@ -170,9 +171,8 @@ export default function BroadcastPage() {
 
       if (result.success && result.tweet_id) {
         // Mark as posted
-        await fetch(`${API_URL}/broadcast/${broadcast.id}/mark-posted`, {
+        await apiFetch(`/broadcast/${broadcast.id}/mark-posted`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             external_id: result.tweet_id,
             external_url: `https://x.com/i/status/${result.tweet_id}`,
@@ -182,7 +182,7 @@ export default function BroadcastPage() {
         fetchBroadcasts()
       } else {
         // Mark as failed
-        await fetch(`${API_URL}/broadcast/${broadcast.id}/mark-failed?error_message=${encodeURIComponent(result.error || 'Unknown error')}`, {
+        await apiFetch(`/broadcast/${broadcast.id}/mark-failed?error_message=${encodeURIComponent(result.error || 'Unknown error')}`, {
           method: 'POST',
         })
         setActionError(result.error || 'Failed to post')
@@ -213,16 +213,10 @@ export default function BroadcastPage() {
         body.scheduled_at = new Date(createScheduleTime).toISOString()
       }
 
-      const res = await fetch(`${API_URL}/broadcast/create`, {
+      await apiFetch(`/broadcast/create`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.detail || 'Failed to create broadcast')
-      }
 
       setShowCreate(false)
       resetCreateForm()
@@ -256,8 +250,19 @@ export default function BroadcastPage() {
       const formData = new FormData()
       formData.append('file', file)
 
+      // Get auth token for file upload (can't use apiFetch with FormData)
+      const { createClient } = await import('@/lib/supabase-client')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+
+      const headers: HeadersInit = {}
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+
       const res = await fetch(`${API_URL}/broadcast/upload-media?platform=${createPlatform}&product_id=${selectedProductId}`, {
         method: 'POST',
+        headers,
         body: formData,
       })
 
@@ -281,15 +286,10 @@ export default function BroadcastPage() {
     setSuggesting(true)
 
     try {
-      const res = await fetch(`${API_URL}/broadcast/suggest-media`, {
+      const data = await apiFetch<MediaSuggestion>(`/broadcast/suggest-media`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: createContent, platform: createPlatform }),
       })
-
-      if (!res.ok) throw new Error('Failed to get suggestion')
-
-      const data = await res.json()
       setMediaSuggestion(data)
     } catch (e: any) {
       setActionError(e.message)
@@ -303,10 +303,7 @@ export default function BroadcastPage() {
     setActionError(null)
 
     try {
-      const res = await fetch(`${API_URL}/broadcast/${id}/post-now`, { method: 'POST' })
-      if (!res.ok) throw new Error('Failed to mark ready')
-
-      const broadcast = await res.json()
+      const broadcast = await apiFetch<Broadcast>(`/broadcast/${id}/post-now`, { method: 'POST' })
       // Update local state
       setBroadcasts(prev => prev.map(b => b.id === id ? broadcast : b))
 
@@ -324,10 +321,7 @@ export default function BroadcastPage() {
     setActionError(null)
 
     try {
-      const res = await fetch(`${API_URL}/broadcast/${id}/amplify`, { method: 'POST' })
-      if (!res.ok) throw new Error('Failed to start amplification')
-
-      const data = await res.json()
+      const data = await apiFetch<{conversations_found: number, replies_queued: number}>(`/broadcast/${id}/amplify`, { method: 'POST' })
       setActionSuccess(`Amplification started: ${data.conversations_found} conversations found, ${data.replies_queued} replies queued`)
       fetchBroadcasts()
     } catch (e: any) {
@@ -342,7 +336,7 @@ export default function BroadcastPage() {
     setActionLoading(id)
 
     try {
-      await fetch(`${API_URL}/broadcast/${id}`, { method: 'DELETE' })
+      await apiFetch(`/broadcast/${id}`, { method: 'DELETE' })
       fetchBroadcasts()
     } catch (e: any) {
       setActionError(e.message)
@@ -364,18 +358,11 @@ export default function BroadcastPage() {
 
     try {
       const tags = recycleTags.split(',').map(t => t.trim()).filter(t => t)
-      const res = await fetch(`${API_URL}/broadcast/${showRecycle}/recycle`, {
+      const data = await apiFetch<{total_templates: number}>(`/broadcast/${showRecycle}/recycle`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ template_text: recycleText, tags }),
       })
 
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.detail || 'Failed to recycle')
-      }
-
-      const data = await res.json()
       setActionSuccess(`Saved as template! Total templates: ${data.total_templates}`)
       setShowRecycle(null)
       setRecycleText('')

@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useProducts } from '@/lib/product-context'
-import { PLATFORM_COLORS, API_URL } from '@/lib/constants'
+import { PLATFORM_COLORS } from '@/lib/constants'
+import { apiFetch } from '@/lib/api'
 
 type HistoryItem = {
   id: string; platform: string; original_content: string; original_url: string
@@ -33,9 +34,8 @@ export default function HistoryPage() {
     if (!selectedProductId) return
     setLoading(true)
     try {
-      const res = await fetch(`${API_URL}/queue/history?product_id=${selectedProductId}`)
-      const data = await res.json()
-      setItems(data || [])
+      const data = await apiFetch<HistoryItem[]>(`/queue/history?product_id=${selectedProductId}`)
+      setItems(Array.isArray(data) ? data : [])
     } catch (e) {
       console.error('Failed to fetch history:', e)
       setItems([])
