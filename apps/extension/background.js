@@ -2,7 +2,7 @@
 // Handles Twitter posting via GraphQL from the browser context
 
 const TWITTER_BEARER = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
-const GRAPHQL_QUERY_ID = "7TKRKCPuAGsmYde0CudbVg";
+const GRAPHQL_QUERY_ID = "ZumXEfvjHvt55CBVLR_DBA";
 const GRAPHQL_CREATE_TWEET_URL = `https://x.com/i/api/graphql/${GRAPHQL_QUERY_ID}/CreateTweet`;
 
 async function getTwitterCookies() {
@@ -280,8 +280,8 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
   console.log('[Operative1] Received message:', action, 'from:', sender.origin);
 
   if (action === 'ping') {
-    console.log('[Operative1] Ping received, responding with version 1.3.0');
-    sendResponse({ success: true, version: '1.3.0' });
+    console.log('[Operative1] Ping received, responding with version 1.4.0');
+    sendResponse({ success: true, version: '1.4.0' });
     return true;
   }
 
@@ -373,4 +373,4 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
   return true;
 });
 
-console.log('[Operative1] Background service worker loaded, version 1.3.0');
+console.log('[Operative1] Background service worker loaded, version 1.4.0');
