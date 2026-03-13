@@ -1,5 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import RedirectResponse
 from contextlib import asynccontextmanager
 from pipelines.scheduler import start_scheduler
 from routers import products, queue, posting, metrics, onboarding, settings, analytics, broadcast
@@ -8,6 +10,19 @@ import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class HTTPSRedirectFixMiddleware(BaseHTTPMiddleware):
+    """Fix redirect URLs to use HTTPS when behind a reverse proxy like Railway."""
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        # Fix redirects that incorrectly use http:// when we're behind HTTPS proxy
+        if response.status_code in (301, 302, 307, 308):
+            location = response.headers.get('location', '')
+            if location.startswith('http://') and request.headers.get('x-forwarded-proto') == 'https':
+                new_location = 'https://' + location[7:]
+                return RedirectResponse(url=new_location, status_code=response.status_code)
+        return response
 
 
 def run_migrations():
@@ -93,6 +108,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(HTTPSRedirectFixMiddleware)
 
 app.include_router(products.router, prefix="/products", tags=["products"])
 app.include_router(queue.router, prefix="/queue", tags=["queue"])
