@@ -20,19 +20,14 @@ type QueueItem = {
   original_language: string | null
   translated_content: string | null
   created_at?: string
+  posted_at?: string | null
+  rejection_reason?: string | null
 }
 
-type ItemStatus = {
-  type: 'success' | 'error'
-  message: string
-  tweetId?: string
-}
+type Tab = 'pending' | 'posted' | 'failed'
 
-type PostResult = {
-  successCount: number
-  skippedCount: number
-  lastError?: string
-}
+// Items that just transitioned — show animation before moving to the other tab
+type TransitionItem = QueueItem & { transitionType: 'success' | 'error'; transitionAt: number }
 
 function getMetaField(item: QueueItem, field: string): string {
   if ((item as any)[field]) return (item as any)[field]
@@ -40,18 +35,14 @@ function getMetaField(item: QueueItem, field: string): string {
 }
 
 function getTweetAge(item: QueueItem): number {
-  // Try to extract tweet timestamp from URL or use created_at
-  // Twitter snowflake IDs contain timestamp
   const tweetId = extractTweetId(item.original_url)
   if (tweetId && tweetId.length > 15) {
     try {
-      // Twitter snowflake: (id >> 22) + 1288834974657
       const timestamp = (BigInt(tweetId) >> BigInt(22)) + BigInt(1288834974657)
       const tweetDate = new Date(Number(timestamp))
-      return (Date.now() - tweetDate.getTime()) / (1000 * 60 * 60) // hours
+      return (Date.now() - tweetDate.getTime()) / (1000 * 60 * 60)
     } catch { }
   }
-  // Fallback to queue item creation time
   if (item.created_at) {
     return (Date.now() - new Date(item.created_at).getTime()) / (1000 * 60 * 60)
   }
@@ -73,9 +64,22 @@ function extractTweetId(url: string): string {
   return ''
 }
 
+function getTodayISO(): string {
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  return now.toISOString()
+}
+
+function formatTime(dateStr: string): string {
+  const d = new Date(dateStr)
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
 export default function QueuePage() {
   const { selectedProduct, selectedProductId, loading: productsLoading } = useProducts()
   const [items, setItems] = useState<QueueItem[]>([])
+  const [postedToday, setPostedToday] = useState<QueueItem[]>([])
+  const [failedToday, setFailedToday] = useState<QueueItem[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
@@ -85,15 +89,16 @@ export default function QueuePage() {
   const [rankNotes, setRankNotes] = useState<Record<string,string>>({})
   const [extensionConnected, setExtensionConnected] = useState<boolean | null>(null)
   const [cleaning, setCleaning] = useState(false)
-  const [itemStatuses, setItemStatuses] = useState<Record<string, ItemStatus>>({})
   const [postingStatus, setPostingStatus] = useState<string | null>(null)
-  const [autoPosting, setAutoPosting] = useState(false)
+  const [activeTab, setActiveTab] = useState<Tab>('pending')
+  const [transitionItems, setTransitionItems] = useState<Record<string, TransitionItem>>({})
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const abortAutoPostRef = useRef(false)
 
   useEffect(() => {
     if (selectedProductId) {
       fetchQueue()
+      fetchPostedToday()
+      fetchFailedToday()
     }
     checkExtensionWithPolling()
     return () => {
@@ -149,12 +154,33 @@ export default function QueuePage() {
       const allItems = Array.isArray(data) ? data : []
       setItems(allItems)
       setRankNotes({})
-      setItemStatuses({})
     } catch (e) {
       console.error('Failed to fetch queue:', e)
       setItems([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function fetchPostedToday() {
+    if (!selectedProductId) return
+    try {
+      const data = await apiFetch<QueueItem[]>(`/queue/history?product_id=${selectedProductId}&status=posted&since=${encodeURIComponent(getTodayISO())}`)
+      setPostedToday(Array.isArray(data) ? data : [])
+    } catch (e) {
+      console.error('Failed to fetch posted today:', e)
+      setPostedToday([])
+    }
+  }
+
+  async function fetchFailedToday() {
+    if (!selectedProductId) return
+    try {
+      const data = await apiFetch<QueueItem[]>(`/queue/history?product_id=${selectedProductId}&status=failed&since=${encodeURIComponent(getTodayISO())}`)
+      setFailedToday(Array.isArray(data) ? data : [])
+    } catch (e) {
+      console.error('Failed to fetch failed today:', e)
+      setFailedToday([])
     }
   }
 
@@ -188,7 +214,6 @@ export default function QueuePage() {
     setRanking(false)
   }
 
-  // Enhanced cleanup: errors + stale tweets
   async function cleanupErrorsAndStale() {
     if (!selectedProductId) return
     setCleaning(true)
@@ -197,6 +222,7 @@ export default function QueuePage() {
       const total = (data.items_moved_to_failed || 0) + (data.stale_cleaned || 0)
       if (total > 0) {
         await fetchQueue()
+        await fetchFailedToday()
       }
     } catch (e) { console.error('Cleanup error:', e) }
     setCleaning(false)
@@ -218,7 +244,49 @@ export default function QueuePage() {
     })
   }
 
-  // Mark item as failed and remove from local state
+  // Transition an item: show animation inline for 3s, then move to target tab
+  function transitionItem(item: QueueItem, type: 'success' | 'error', postedTweetId?: string) {
+    const transitioned: TransitionItem = {
+      ...item,
+      status: type === 'success' ? 'posted' : 'failed',
+      transitionType: type,
+      transitionAt: Date.now(),
+      engagement_metrics: {
+        ...(item.engagement_metrics || {}),
+        ...(postedTweetId ? { posted_tweet_id: postedTweetId } : {})
+      }
+    }
+
+    // Add to transition state (shows animation in pending list)
+    setTransitionItems(prev => ({ ...prev, [item.id]: transitioned }))
+
+    // Remove from pending items list
+    setItems(prev => prev.filter(i => i.id !== item.id))
+
+    // After 3s, move from transition to the appropriate tab list
+    setTimeout(() => {
+      setTransitionItems(prev => {
+        const next = { ...prev }
+        delete next[item.id]
+        return next
+      })
+      const finalItem: QueueItem = {
+        ...item,
+        status: type === 'success' ? 'posted' : 'failed',
+        posted_at: type === 'success' ? new Date().toISOString() : null,
+        engagement_metrics: {
+          ...(item.engagement_metrics || {}),
+          ...(postedTweetId ? { posted_tweet_id: postedTweetId } : {})
+        }
+      }
+      if (type === 'success') {
+        setPostedToday(prev => [finalItem, ...prev])
+      } else {
+        setFailedToday(prev => [finalItem, ...prev])
+      }
+    }, 3000)
+  }
+
   async function markFailedAndRemove(item: QueueItem, reason: string) {
     try {
       await apiFetch(`/queue/${item.id}/mark-failed?product_id=${selectedProductId}`, {
@@ -228,30 +296,20 @@ export default function QueuePage() {
     } catch (e) {
       console.warn('Failed to mark item as failed:', e)
     }
-    // Remove from local state immediately
-    setItems(prev => prev.filter(i => i.id !== item.id))
+    transitionItem(item, 'error')
   }
 
-  // Check if error indicates tweet can't be replied to
   function isUnreplyableError(error: string): boolean {
     const unreplyablePatterns = [
-      'tweet_results',
-      'empty',
-      'does not allow',
-      'restricted',
-      'protected',
-      'not found',
-      'deleted',
-      'unavailable',
-      'cannot reply',
-      'reply restricted'
+      'tweet_results', 'empty', 'does not allow', 'restricted',
+      'protected', 'not found', 'deleted', 'unavailable',
+      'cannot reply', 'reply restricted'
     ]
     const lowerError = error.toLowerCase()
     return unreplyablePatterns.some(p => lowerError.includes(p))
   }
 
-  // Single item approval with auto-cleanup on failure
-  async function approveSingle(item: QueueItem): Promise<{success: boolean; skipped: boolean}> {
+  async function approveSingle(item: QueueItem): Promise<{success: boolean; skipped: boolean; tweetId?: string}> {
     const replyText = item.edited_reply || item.draft_reply
     const tweetId = extractTweetId(item.original_url)
 
@@ -260,7 +318,6 @@ export default function QueuePage() {
       return { success: false, skipped: true }
     }
 
-    // Check if stale
     if (isStale(item)) {
       await markFailedAndRemove(item, 'Tweet is stale (>48h old)')
       return { success: false, skipped: true }
@@ -269,7 +326,6 @@ export default function QueuePage() {
     const result = await postViaExtension(tweetId, replyText)
 
     if (result.success) {
-      // Update backend DB status
       try {
         await apiFetch(`/queue/${item.id}/mark-posted?product_id=${selectedProductId}`, {
           method: 'POST',
@@ -278,55 +334,31 @@ export default function QueuePage() {
       } catch (e) {
         console.warn('mark-posted failed but tweet was posted:', e)
       }
-      // Remove from local state
-      setItems(prev => prev.filter(i => i.id !== item.id))
-      return { success: true, skipped: false }
+      transitionItem(item, 'success', result.tweet_id)
+      return { success: true, skipped: false, tweetId: result.tweet_id }
     } else {
-      // Check if it's an unreplyable tweet error
       const errorMsg = result.error || 'Unknown error'
       if (isUnreplyableError(errorMsg)) {
-        // Silently mark as failed and remove
         await markFailedAndRemove(item, `Tweet does not allow replies: ${errorMsg}`)
         return { success: false, skipped: true }
       }
-      // Other errors - still fail but don't auto-skip
       return { success: false, skipped: false }
     }
   }
 
-  // Approve with auto-advance on failure
   async function approve(item: QueueItem) {
     if (!extensionConnected) return
 
     setActionLoading(item.id)
-    setItemStatuses(prev => {
-      const next = { ...prev }
-      delete next[item.id]
-      return next
-    })
 
     const result = await approveSingle(item)
 
     if (result.success) {
-      setItemStatuses(prev => ({
-        ...prev,
-        [item.id]: { type: 'success', message: 'Posted successfully!' }
-      }))
       setActionLoading(null)
-      // Brief delay to show success
-      setTimeout(() => {
-        setItemStatuses(prev => {
-          const next = { ...prev }
-          delete next[item.id]
-          return next
-        })
-      }, 2000)
     } else if (result.skipped) {
-      // Silently skipped - try next item automatically
       setActionLoading(null)
       const remainingItems = items.filter(i => i.id !== item.id)
       if (remainingItems.length > 0) {
-        // Auto-advance to next item
         setPostingStatus('Skipped restricted tweet, trying next...')
         setTimeout(() => {
           approveWithAutoAdvance(remainingItems[0], 1)
@@ -336,16 +368,18 @@ export default function QueuePage() {
         setTimeout(() => setPostingStatus(null), 3000)
       }
     } else {
-      // Real error - show to user
-      setItemStatuses(prev => ({
-        ...prev,
-        [item.id]: { type: 'error', message: 'Failed to post. Try again or skip.' }
-      }))
+      // Real error — show inline failure animation
+      try {
+        await apiFetch(`/queue/${item.id}/mark-failed?product_id=${selectedProductId}`, {
+          method: 'POST',
+          body: JSON.stringify({ error: 'Extension posting failed' })
+        })
+      } catch {}
+      transitionItem(item, 'error')
       setActionLoading(null)
     }
   }
 
-  // Auto-advance through queue on failures
   async function approveWithAutoAdvance(item: QueueItem, skippedSoFar: number) {
     if (!extensionConnected || skippedSoFar >= 3) {
       setPostingStatus(`Skipped ${skippedSoFar} restricted tweets - try again later`)
@@ -382,6 +416,44 @@ export default function QueuePage() {
     }
   }
 
+  async function retryFailed(item: QueueItem) {
+    if (!extensionConnected) return
+    // Move back to pending in DB, then re-approve
+    try {
+      // Re-attempt posting directly
+      setActionLoading(item.id)
+      const replyText = item.edited_reply || item.draft_reply
+      const tweetId = extractTweetId(item.original_url)
+      if (!tweetId) {
+        setActionLoading(null)
+        return
+      }
+      const result = await postViaExtension(tweetId, replyText)
+      if (result.success) {
+        try {
+          await apiFetch(`/queue/${item.id}/mark-posted?product_id=${selectedProductId}`, {
+            method: 'POST',
+            body: JSON.stringify({ posted_tweet_id: result.tweet_id })
+          })
+        } catch {}
+        // Move from failed to posted
+        setFailedToday(prev => prev.filter(i => i.id !== item.id))
+        setPostedToday(prev => [{
+          ...item,
+          status: 'posted',
+          posted_at: new Date().toISOString(),
+          engagement_metrics: {
+            ...(item.engagement_metrics || {}),
+            ...(result.tweet_id ? { posted_tweet_id: result.tweet_id } : {})
+          }
+        }, ...prev])
+      }
+      setActionLoading(null)
+    } catch {
+      setActionLoading(null)
+    }
+  }
+
   async function reject(id: string) {
     if (!selectedProductId) return
     setActionLoading(id)
@@ -395,11 +467,6 @@ export default function QueuePage() {
   }
 
   async function skip(id: string) {
-    setItemStatuses(prev => {
-      const next = { ...prev }
-      delete next[id]
-      return next
-    })
     setItems(prev => {
       const item = prev.find(i => i.id === id)
       if (!item) return prev
@@ -420,8 +487,10 @@ export default function QueuePage() {
     setActionLoading(null)
   }
 
-  // Count stale items
   const staleCount = items.filter(isStale).length
+
+  // Transition items shown in the pending tab (3s animation)
+  const transitionList = Object.values(transitionItems)
 
   if (productsLoading) {
     return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'200px',color:'#999',fontSize:'14px'}}>Loading...</div>
@@ -430,7 +499,7 @@ export default function QueuePage() {
   if (!selectedProduct) {
     return (
       <div style={{textAlign:'center',padding:'80px 40px',background:'#fafafa',borderRadius:'16px',border:'1px solid #e8e8e8'}}>
-        <div style={{fontSize:'32px',marginBottom:'12px'}}>📦</div>
+        <div style={{fontSize:'32px',marginBottom:'12px'}}>&#128230;</div>
         <p style={{fontSize:'15px',fontWeight:500,color:'#111'}}>Select a product</p>
         <p style={{fontSize:'13px',color:'#999',marginTop:'4px'}}>Choose a product from the sidebar to view its queue</p>
       </div>
@@ -490,184 +559,424 @@ export default function QueuePage() {
         </div>
       )}
 
-      <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:'32px'}}>
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:'24px'}}>
         <div>
           <h1 style={{fontSize:'28px',fontWeight:600,color:'#111',lineHeight:1}}>Reply Queue</h1>
-          <p style={{fontSize:'14px',color:'#999',marginTop:'6px'}}>
-            {selectedProduct.name} — {items.length} pending {items.length===1?'reply':'replies'}
-            {staleCount > 0 && <span style={{color:'#f57c00'}}> ({staleCount} stale)</span>}
-          </p>
+          <p style={{fontSize:'14px',color:'#999',marginTop:'6px'}}>{selectedProduct.name}</p>
         </div>
-        <div style={{display:'flex',gap:'8px'}}>
-          <button onClick={smartRank} disabled={ranking || items.length === 0}
-            style={{fontSize:'13px',color:'#111',background:'#fff',border:'1px solid #e0e0e0',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:600,opacity:ranking?0.5:1}}>
-            {ranking ? 'Ranking...' : 'Smart Rank'}
-          </button>
-          <button onClick={cleanupErrorsAndStale} disabled={cleaning || items.length === 0}
-            style={{fontSize:'13px',color:'#c62828',background:'#fff',border:'1px solid #ffcdd2',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500,opacity:cleaning?0.5:1}}>
-            {cleaning ? 'Cleaning...' : `Clean${staleCount > 0 ? ` (${staleCount} stale)` : ''}`}
-          </button>
-          <button onClick={fetchQueue} style={{fontSize:'13px',color:'#666',background:'#f5f5f5',border:'none',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500}}>Refresh</button>
-        </div>
+        {activeTab === 'pending' && (
+          <div style={{display:'flex',gap:'8px'}}>
+            <button onClick={smartRank} disabled={ranking || items.length === 0}
+              style={{fontSize:'13px',color:'#111',background:'#fff',border:'1px solid #e0e0e0',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:600,opacity:ranking?0.5:1}}>
+              {ranking ? 'Ranking...' : 'Smart Rank'}
+            </button>
+            <button onClick={cleanupErrorsAndStale} disabled={cleaning || items.length === 0}
+              style={{fontSize:'13px',color:'#c62828',background:'#fff',border:'1px solid #ffcdd2',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500,opacity:cleaning?0.5:1}}>
+              {cleaning ? 'Cleaning...' : `Clean${staleCount > 0 ? ` (${staleCount} stale)` : ''}`}
+            </button>
+            <button onClick={() => { fetchQueue(); fetchPostedToday(); fetchFailedToday() }} style={{fontSize:'13px',color:'#666',background:'#f5f5f5',border:'none',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500}}>Refresh</button>
+          </div>
+        )}
+        {activeTab !== 'pending' && (
+          <button onClick={() => { fetchPostedToday(); fetchFailedToday() }} style={{fontSize:'13px',color:'#666',background:'#f5f5f5',border:'none',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500}}>Refresh</button>
+        )}
       </div>
 
-      {items.length===0 && (
-        <div style={{textAlign:'center',padding:'80px 40px',background:'#fafafa',borderRadius:'16px',border:'1px solid #e8e8e8'}}>
-          <div style={{fontSize:'32px',marginBottom:'12px'}}>&#10003;</div>
-          <p style={{fontSize:'15px',fontWeight:500,color:'#111'}}>Queue is empty</p>
-          <p style={{fontSize:'13px',color:'#999',marginTop:'4px'}}>New replies appear automatically</p>
-        </div>
-      )}
+      {/* Tabs */}
+      <div style={{display:'flex',gap:'4px',marginBottom:'24px',background:'#f5f5f5',borderRadius:'12px',padding:'4px'}}>
+        {([
+          { key: 'pending' as Tab, label: 'Pending', count: items.length },
+          { key: 'posted' as Tab, label: 'Posted Today', count: postedToday.length + transitionList.filter(t => t.transitionType === 'success').length },
+          { key: 'failed' as Tab, label: 'Failed', count: failedToday.length + transitionList.filter(t => t.transitionType === 'error').length },
+        ]).map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            style={{
+              flex: 1,
+              padding: '10px 16px',
+              borderRadius: '10px',
+              border: 'none',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              background: activeTab === tab.key ? '#fff' : 'transparent',
+              color: activeTab === tab.key ? '#111' : '#999',
+              boxShadow: activeTab === tab.key ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+            }}
+          >
+            {tab.label} ({tab.count})
+          </button>
+        ))}
+      </div>
 
-      <div style={{display:'flex',flexDirection:'column',gap:'16px'}}>
-        {items.map((item, idx) => {
-          const replyMode = getMetaField(item, 'reply_mode')
-          const relevanceReason = getMetaField(item, 'relevance_reason')
-          const originalLang = getMetaField(item, 'original_language')
-          const translatedContent = getMetaField(item, 'translated_content')
-          const relevanceScore = item.engagement_metrics?.relevance_score
-          const modeStyle = MODE_COLORS[replyMode] || { bg: '#f0f0f0', color: '#555' }
-          const rankNote = rankNotes[item.id]
-          const itemStatus = itemStatuses[item.id]
-          const stale = isStale(item)
-          const ageHours = Math.round(getTweetAge(item))
-
-          return (
-          <div key={item.id} style={{borderRadius:'16px',border: stale ? '2px solid #ff9800' : '1px solid #e8e8e8',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(0,0,0,0.05)',opacity: stale ? 0.8 : 1}}>
-            {/* Header */}
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'#fafafa',borderBottom:'1px solid #f0f0f0',flexWrap:'wrap',gap:'8px'}}>
-              <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
-                <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',color:'#fff',background:PLATFORM_COLORS[item.platform]||'#111',textTransform:'uppercase',letterSpacing:'0.05em'}}>{item.platform}</span>
-                {stale && (
-                  <span style={{fontSize:'10px',fontWeight:600,padding:'3px 8px',borderRadius:'20px',background:'#fff3e0',color:'#e65100',textTransform:'uppercase',letterSpacing:'0.04em'}}>
-                    Stale ({ageHours}h)
+      {/* ============ PENDING TAB ============ */}
+      {activeTab === 'pending' && (
+        <div style={{display:'flex',flexDirection:'column',gap:'16px'}}>
+          {/* Transition items (success/error animations) */}
+          {transitionList.map(tItem => (
+            <div
+              key={tItem.id}
+              style={{
+                borderRadius:'16px',
+                border: tItem.transitionType === 'success' ? '2px solid #4caf50' : '2px solid #e53935',
+                overflow:'hidden',
+                background: tItem.transitionType === 'success' ? '#f1f8e9' : '#fce4ec',
+                boxShadow: tItem.transitionType === 'success'
+                  ? '0 0 20px rgba(76,175,80,0.3)'
+                  : '0 0 20px rgba(229,57,53,0.3)',
+                animation: 'fadeOut 3s ease-in-out forwards',
+                transition: 'all 0.3s ease',
+              }}
+            >
+              <div style={{padding:'16px 20px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+                  <span style={{
+                    fontSize: '13px', fontWeight: 700, padding: '4px 14px',
+                    borderRadius: '20px', textTransform: 'uppercase', letterSpacing: '0.05em',
+                    background: tItem.transitionType === 'success' ? '#4caf50' : '#e53935',
+                    color: '#fff'
+                  }}>
+                    {tItem.transitionType === 'success' ? 'Posted!' : 'Failed'}
                   </span>
-                )}
-                {replyMode && (
-                  <span style={{fontSize:'10px',fontWeight:600,padding:'3px 8px',borderRadius:'20px',background:modeStyle.bg,color:modeStyle.color,textTransform:'uppercase',letterSpacing:'0.04em'}}>
-                    {replyMode.replace('_', ' ')}
+                  <span style={{fontSize:'14px',color:'#333'}}>
+                    {(tItem.edited_reply || tItem.draft_reply).slice(0, 80)}...
                   </span>
-                )}
-                {originalLang && originalLang !== 'en' && (
-                  <span style={{fontSize:'10px',fontWeight:600,padding:'3px 8px',borderRadius:'20px',background:'#fce4ec',color:'#c62828',textTransform:'uppercase'}}>{originalLang}</span>
-                )}
-                <span style={{fontSize:'13px',color:'#999'}}>@{item.original_author}</span>
-              </div>
-              <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
-                {relevanceScore != null && (
-                  <span style={{fontSize:'13px',color:'#999'}}>Relevance <strong style={{color:'#111'}}>{relevanceScore}/10</strong></span>
-                )}
-                <span style={{fontSize:'13px',color:'#999'}}>Confidence <strong style={{color:'#111'}}>{Math.round((item.confidence_score||0)*100)}%</strong></span>
-                {item.mentions_product && <span style={{fontSize:'11px',fontWeight:500,padding:'3px 10px',borderRadius:'20px',background:'#f0f0f0',color:'#555'}}>mentions product</span>}
-              </div>
-            </div>
-
-            {/* Success/Error Status */}
-            {itemStatus?.type === 'success' && (
-              <div style={{padding:'12px 20px',background:'#e8f5e9',borderBottom:'1px solid #c8e6c9',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                <span style={{fontSize:'13px',fontWeight:600,color:'#2e7d32'}}>{itemStatus.message}</span>
-                {itemStatus.tweetId && (
-                  <a href={`https://x.com/i/web/status/${itemStatus.tweetId}`} target="_blank" rel="noopener noreferrer"
-                    style={{fontSize:'13px',fontWeight:500,color:'#1da1f2',textDecoration:'none'}}>
-                    View Tweet &rarr;
+                </div>
+                {tItem.transitionType === 'success' && tItem.engagement_metrics?.posted_tweet_id && (
+                  <a
+                    href={`https://x.com/i/web/status/${tItem.engagement_metrics.posted_tweet_id}`}
+                    target="_blank" rel="noopener noreferrer"
+                    style={{fontSize:'13px',fontWeight:500,color:'#1da1f2',textDecoration:'none',whiteSpace:'nowrap'}}
+                  >
+                    View on Twitter &rarr;
                   </a>
                 )}
               </div>
-            )}
-            {itemStatus?.type === 'error' && (
-              <div style={{padding:'12px 20px',background:'#ffebee',borderBottom:'1px solid #ffcdd2'}}>
-                <span style={{fontSize:'13px',fontWeight:600,color:'#c62828'}}>Error: {itemStatus.message}</span>
-              </div>
-            )}
-
-            {/* AI Rank Note */}
-            {rankNote && (
-              <div style={{padding:'8px 20px',background:'#fffde7',borderBottom:'1px solid #fff9c4',fontSize:'13px',color:'#f57f17',fontWeight:500}}>
-                #{idx+1} &mdash; {rankNote}
-              </div>
-            )}
-
-            {/* Relevance Reason */}
-            {relevanceReason && (
-              <div style={{padding:'8px 20px',background:'#f8f9fa',borderBottom:'1px solid #f0f0f0',fontSize:'13px',color:'#666',fontStyle:'italic'}}>
-                {relevanceReason}
-              </div>
-            )}
-
-            {/* Original Post */}
-            <div style={{padding:'16px 20px',borderBottom:'1px solid #f5f5f5'}}>
-              <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'8px'}}>Original Post</div>
-              <p style={{fontSize:'14px',color:'#111',lineHeight:1.6}}>{item.original_content}</p>
-              {translatedContent && (
-                <div style={{marginTop:'10px',padding:'10px 14px',background:'#f5f5f5',borderRadius:'8px',border:'1px solid #eee'}}>
-                  <div style={{fontSize:'10px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'4px'}}>Translated</div>
-                  <p style={{fontSize:'13px',color:'#444',lineHeight:1.5}}>{translatedContent}</p>
-                </div>
-              )}
-              {item.original_url && <a href={item.original_url} target="_blank" rel="noopener noreferrer" style={{fontSize:'13px',color:'#999',marginTop:'6px',display:'inline-block'}}>View original &rarr;</a>}
             </div>
+          ))}
 
-            {/* Draft Reply */}
-            <div style={{padding:'16px 20px'}}>
-              <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'8px'}}>Draft Reply</div>
-              {editingId===item.id ? (
-                <div>
-                  <textarea value={editText} onChange={e=>setEditText(e.target.value)} rows={4}
-                    style={{width:'100%',padding:'12px 14px',borderRadius:'10px',border:'1px solid #e0e0e0',fontSize:'14px',color:'#111',resize:'none',outline:'none',fontFamily:'inherit'}}
-                    onFocus={e=>e.target.style.borderColor='#111'} onBlur={e=>e.target.style.borderColor='#e0e0e0'}
-                  />
-                  <div style={{display:'flex',gap:'8px',marginTop:'10px'}}>
-                    <button onClick={()=>saveEdit(item.id)} disabled={actionLoading===item.id} style={{padding:'8px 18px',borderRadius:'8px',background:'#111',color:'#fff',fontSize:'13px',fontWeight:600,border:'none',cursor:'pointer',opacity:actionLoading===item.id?0.5:1}}>Save</button>
-                    <button onClick={()=>setEditingId(null)} style={{padding:'8px 18px',borderRadius:'8px',background:'#f5f5f5',color:'#555',fontSize:'13px',fontWeight:500,border:'none',cursor:'pointer'}}>Cancel</button>
+          {items.length === 0 && transitionList.length === 0 && (
+            <div style={{textAlign:'center',padding:'80px 40px',background:'#fafafa',borderRadius:'16px',border:'1px solid #e8e8e8'}}>
+              <div style={{fontSize:'32px',marginBottom:'12px'}}>&#10003;</div>
+              <p style={{fontSize:'15px',fontWeight:500,color:'#111'}}>Queue is empty</p>
+              <p style={{fontSize:'13px',color:'#999',marginTop:'4px'}}>New replies appear automatically</p>
+            </div>
+          )}
+
+          {items.map((item, idx) => (
+            <PendingCard
+              key={item.id}
+              item={item}
+              idx={idx}
+              rankNotes={rankNotes}
+              extensionConnected={extensionConnected}
+              actionLoading={actionLoading}
+              editingId={editingId}
+              editText={editText}
+              setEditText={setEditText}
+              setEditingId={setEditingId}
+              onApprove={approve}
+              onReject={reject}
+              onSkip={skip}
+              onSaveEdit={saveEdit}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ============ POSTED TODAY TAB ============ */}
+      {activeTab === 'posted' && (
+        <div style={{display:'flex',flexDirection:'column',gap:'16px'}}>
+          {postedToday.length === 0 && (
+            <div style={{textAlign:'center',padding:'80px 40px',background:'#fafafa',borderRadius:'16px',border:'1px solid #e8e8e8'}}>
+              <p style={{fontSize:'15px',fontWeight:500,color:'#111'}}>No posts today yet</p>
+              <p style={{fontSize:'13px',color:'#999',marginTop:'4px'}}>Approved replies will appear here</p>
+            </div>
+          )}
+
+          {postedToday.map(item => {
+            const postedTweetId = item.engagement_metrics?.posted_tweet_id
+            const replyMode = getMetaField(item, 'reply_mode')
+            const modeStyle = MODE_COLORS[replyMode] || { bg: '#f0f0f0', color: '#555' }
+
+            return (
+              <div key={item.id} style={{borderRadius:'16px',border:'1px solid #c8e6c9',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(0,0,0,0.05)'}}>
+                {/* Header */}
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'#f1f8e9',borderBottom:'1px solid #c8e6c9',flexWrap:'wrap',gap:'8px'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+                    <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',color:'#fff',background:'#4caf50',textTransform:'uppercase',letterSpacing:'0.05em'}}>Posted</span>
+                    <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',color:'#fff',background:PLATFORM_COLORS[item.platform]||'#111',textTransform:'uppercase',letterSpacing:'0.05em'}}>{item.platform}</span>
+                    {replyMode && (
+                      <span style={{fontSize:'10px',fontWeight:600,padding:'3px 8px',borderRadius:'20px',background:modeStyle.bg,color:modeStyle.color,textTransform:'uppercase',letterSpacing:'0.04em'}}>
+                        {replyMode.replace('_', ' ')}
+                      </span>
+                    )}
+                    <span style={{fontSize:'13px',color:'#999'}}>@{item.original_author}</span>
                   </div>
+                  <span style={{fontSize:'12px',color:'#66bb6a',fontWeight:500}}>
+                    {item.posted_at ? formatTime(item.posted_at) : (item.created_at ? formatTime(item.created_at) : '')}
+                  </span>
                 </div>
-              ) : (
-                <p style={{fontSize:'14px',color:'#111',lineHeight:1.6}}>
-                  {item.edited_reply||item.draft_reply}
-                  {item.edited_reply && <span style={{marginLeft:'8px',fontSize:'12px',color:'#999'}}>(edited)</span>}
-                </p>
-              )}
-            </div>
 
-            {/* Actions */}
-            {editingId!==item.id && itemStatus?.type !== 'success' && (
-              <div style={{display:'flex',gap:'8px',padding:'12px 20px',background:'#fafafa',borderTop:'1px solid #f0f0f0'}}>
-                <button
-                  onClick={()=>approve(item)}
-                  disabled={actionLoading===item.id || !extensionConnected}
-                  title={!extensionConnected ? 'Connect Chrome extension to post' : stale ? 'This tweet is stale but you can still try' : ''}
-                  style={{
-                    flex:1,
-                    padding:'10px',
-                    borderRadius:'10px',
-                    background: extensionConnected ? (stale ? '#ff9800' : '#111') : '#ccc',
-                    color:'#fff',
-                    fontSize:'13px',
-                    fontWeight:600,
-                    border:'none',
-                    cursor: extensionConnected ? 'pointer' : 'not-allowed',
-                    opacity:actionLoading===item.id?0.5:1
-                  }}>
-                  {actionLoading===item.id ? 'Posting...' : (stale ? 'Try Anyway' : 'Approve & Post')}
-                </button>
-                <button onClick={()=>{setEditingId(item.id);setEditText(item.edited_reply||item.draft_reply)}}
-                  style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#111',fontSize:'13px',fontWeight:500,border:'1px solid #e0e0e0',cursor:'pointer'}}>
-                  Edit
-                </button>
-                <button onClick={()=>skip(item.id)}
-                  style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#666',fontSize:'13px',fontWeight:500,border:'1px solid #e0e0e0',cursor:'pointer'}}>
-                  Skip
-                </button>
-                <button onClick={()=>reject(item.id)} disabled={actionLoading===item.id}
-                  style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#e53e3e',fontSize:'13px',fontWeight:500,border:'1px solid #ffd7d7',cursor:'pointer',opacity:actionLoading===item.id?0.5:1}}>
-                  Reject
-                </button>
+                {/* Original Post */}
+                <div style={{padding:'14px 20px',borderBottom:'1px solid #f5f5f5'}}>
+                  <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'6px'}}>Original Post</div>
+                  <p style={{fontSize:'14px',color:'#555',lineHeight:1.6}}>{item.original_content}</p>
+                  {item.original_url && <a href={item.original_url} target="_blank" rel="noopener noreferrer" style={{fontSize:'12px',color:'#999',marginTop:'4px',display:'inline-block'}}>View original &rarr;</a>}
+                </div>
+
+                {/* Posted Reply */}
+                <div style={{padding:'14px 20px'}}>
+                  <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'6px'}}>Posted Reply</div>
+                  <p style={{fontSize:'14px',color:'#111',lineHeight:1.6}}>{item.edited_reply || item.draft_reply}</p>
+                  {postedTweetId && (
+                    <a
+                      href={`https://x.com/i/web/status/${postedTweetId}`}
+                      target="_blank" rel="noopener noreferrer"
+                      style={{
+                        display:'inline-flex',alignItems:'center',gap:'6px',
+                        marginTop:'10px',fontSize:'13px',fontWeight:600,
+                        color:'#1da1f2',textDecoration:'none',
+                        padding:'6px 14px',background:'#e8f4fd',borderRadius:'8px'
+                      }}
+                    >
+                      View on Twitter &rarr;
+                    </a>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
-          )
-        })}
+            )
+          })}
+        </div>
+      )}
+
+      {/* ============ FAILED TAB ============ */}
+      {activeTab === 'failed' && (
+        <div style={{display:'flex',flexDirection:'column',gap:'16px'}}>
+          {failedToday.length === 0 && (
+            <div style={{textAlign:'center',padding:'80px 40px',background:'#fafafa',borderRadius:'16px',border:'1px solid #e8e8e8'}}>
+              <p style={{fontSize:'15px',fontWeight:500,color:'#111'}}>No failures today</p>
+              <p style={{fontSize:'13px',color:'#999',marginTop:'4px'}}>Failed posts will appear here with retry options</p>
+            </div>
+          )}
+
+          {failedToday.map(item => {
+            const replyMode = getMetaField(item, 'reply_mode')
+            const modeStyle = MODE_COLORS[replyMode] || { bg: '#f0f0f0', color: '#555' }
+
+            return (
+              <div key={item.id} style={{borderRadius:'16px',border:'1px solid #ffcdd2',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(0,0,0,0.05)'}}>
+                {/* Header */}
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'#fce4ec',borderBottom:'1px solid #ffcdd2',flexWrap:'wrap',gap:'8px'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+                    <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',color:'#fff',background:'#e53935',textTransform:'uppercase',letterSpacing:'0.05em'}}>Failed</span>
+                    <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',color:'#fff',background:PLATFORM_COLORS[item.platform]||'#111',textTransform:'uppercase',letterSpacing:'0.05em'}}>{item.platform}</span>
+                    {replyMode && (
+                      <span style={{fontSize:'10px',fontWeight:600,padding:'3px 8px',borderRadius:'20px',background:modeStyle.bg,color:modeStyle.color,textTransform:'uppercase',letterSpacing:'0.04em'}}>
+                        {replyMode.replace('_', ' ')}
+                      </span>
+                    )}
+                    <span style={{fontSize:'13px',color:'#999'}}>@{item.original_author}</span>
+                  </div>
+                  <span style={{fontSize:'12px',color:'#e57373',fontWeight:500}}>
+                    {item.created_at ? formatTime(item.created_at) : ''}
+                  </span>
+                </div>
+
+                {/* Error reason */}
+                {item.rejection_reason && (
+                  <div style={{padding:'10px 20px',background:'#ffebee',borderBottom:'1px solid #ffcdd2',fontSize:'13px',color:'#c62828'}}>
+                    {item.rejection_reason}
+                  </div>
+                )}
+
+                {/* Original Post */}
+                <div style={{padding:'14px 20px',borderBottom:'1px solid #f5f5f5'}}>
+                  <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'6px'}}>Original Post</div>
+                  <p style={{fontSize:'14px',color:'#555',lineHeight:1.6}}>{item.original_content}</p>
+                  {item.original_url && <a href={item.original_url} target="_blank" rel="noopener noreferrer" style={{fontSize:'12px',color:'#999',marginTop:'4px',display:'inline-block'}}>View original &rarr;</a>}
+                </div>
+
+                {/* Draft Reply + Retry */}
+                <div style={{padding:'14px 20px',display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'16px'}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'6px'}}>Draft Reply</div>
+                    <p style={{fontSize:'14px',color:'#111',lineHeight:1.6}}>{item.edited_reply || item.draft_reply}</p>
+                  </div>
+                  {extensionConnected && (
+                    <button
+                      onClick={() => retryFailed(item)}
+                      disabled={actionLoading === item.id}
+                      style={{
+                        padding:'8px 18px',borderRadius:'8px',
+                        background:'#111',color:'#fff',fontSize:'13px',
+                        fontWeight:600,border:'none',cursor:'pointer',
+                        whiteSpace:'nowrap',opacity: actionLoading === item.id ? 0.5 : 1,
+                        marginTop:'20px'
+                      }}
+                    >
+                      {actionLoading === item.id ? 'Retrying...' : 'Retry'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <style>{`
+        @keyframes fadeOut {
+          0% { opacity: 1; transform: scale(1); }
+          70% { opacity: 1; transform: scale(1); }
+          100% { opacity: 0.4; transform: scale(0.98); }
+        }
+      `}</style>
+    </div>
+  )
+}
+
+// Extracted pending card component to keep the main component cleaner
+function PendingCard({ item, idx, rankNotes, extensionConnected, actionLoading, editingId, editText, setEditText, setEditingId, onApprove, onReject, onSkip, onSaveEdit }: {
+  item: QueueItem; idx: number
+  rankNotes: Record<string,string>
+  extensionConnected: boolean | null
+  actionLoading: string | null
+  editingId: string | null; editText: string
+  setEditText: (t: string) => void
+  setEditingId: (id: string | null) => void
+  onApprove: (item: QueueItem) => void
+  onReject: (id: string) => void
+  onSkip: (id: string) => void
+  onSaveEdit: (id: string) => void
+}) {
+  const replyMode = getMetaField(item, 'reply_mode')
+  const relevanceReason = getMetaField(item, 'relevance_reason')
+  const originalLang = getMetaField(item, 'original_language')
+  const translatedContent = getMetaField(item, 'translated_content')
+  const relevanceScore = item.engagement_metrics?.relevance_score
+  const modeStyle = MODE_COLORS[replyMode] || { bg: '#f0f0f0', color: '#555' }
+  const rankNote = rankNotes[item.id]
+  const stale = isStale(item)
+  const ageHours = Math.round(getTweetAge(item))
+
+  return (
+    <div style={{borderRadius:'16px',border: stale ? '2px solid #ff9800' : '1px solid #e8e8e8',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(0,0,0,0.05)',opacity: stale ? 0.8 : 1}}>
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'#fafafa',borderBottom:'1px solid #f0f0f0',flexWrap:'wrap',gap:'8px'}}>
+        <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+          <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',color:'#fff',background:PLATFORM_COLORS[item.platform]||'#111',textTransform:'uppercase',letterSpacing:'0.05em'}}>{item.platform}</span>
+          {stale && (
+            <span style={{fontSize:'10px',fontWeight:600,padding:'3px 8px',borderRadius:'20px',background:'#fff3e0',color:'#e65100',textTransform:'uppercase',letterSpacing:'0.04em'}}>
+              Stale ({ageHours}h)
+            </span>
+          )}
+          {replyMode && (
+            <span style={{fontSize:'10px',fontWeight:600,padding:'3px 8px',borderRadius:'20px',background:modeStyle.bg,color:modeStyle.color,textTransform:'uppercase',letterSpacing:'0.04em'}}>
+              {replyMode.replace('_', ' ')}
+            </span>
+          )}
+          {originalLang && originalLang !== 'en' && (
+            <span style={{fontSize:'10px',fontWeight:600,padding:'3px 8px',borderRadius:'20px',background:'#fce4ec',color:'#c62828',textTransform:'uppercase'}}>{originalLang}</span>
+          )}
+          <span style={{fontSize:'13px',color:'#999'}}>@{item.original_author}</span>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+          {relevanceScore != null && (
+            <span style={{fontSize:'13px',color:'#999'}}>Relevance <strong style={{color:'#111'}}>{relevanceScore}/10</strong></span>
+          )}
+          <span style={{fontSize:'13px',color:'#999'}}>Confidence <strong style={{color:'#111'}}>{Math.round((item.confidence_score||0)*100)}%</strong></span>
+          {item.mentions_product && <span style={{fontSize:'11px',fontWeight:500,padding:'3px 10px',borderRadius:'20px',background:'#f0f0f0',color:'#555'}}>mentions product</span>}
+        </div>
       </div>
+
+      {/* AI Rank Note */}
+      {rankNote && (
+        <div style={{padding:'8px 20px',background:'#fffde7',borderBottom:'1px solid #fff9c4',fontSize:'13px',color:'#f57f17',fontWeight:500}}>
+          #{idx+1} &mdash; {rankNote}
+        </div>
+      )}
+
+      {/* Relevance Reason */}
+      {relevanceReason && (
+        <div style={{padding:'8px 20px',background:'#f8f9fa',borderBottom:'1px solid #f0f0f0',fontSize:'13px',color:'#666',fontStyle:'italic'}}>
+          {relevanceReason}
+        </div>
+      )}
+
+      {/* Original Post */}
+      <div style={{padding:'16px 20px',borderBottom:'1px solid #f5f5f5'}}>
+        <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'8px'}}>Original Post</div>
+        <p style={{fontSize:'14px',color:'#111',lineHeight:1.6}}>{item.original_content}</p>
+        {translatedContent && (
+          <div style={{marginTop:'10px',padding:'10px 14px',background:'#f5f5f5',borderRadius:'8px',border:'1px solid #eee'}}>
+            <div style={{fontSize:'10px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'4px'}}>Translated</div>
+            <p style={{fontSize:'13px',color:'#444',lineHeight:1.5}}>{translatedContent}</p>
+          </div>
+        )}
+        {item.original_url && <a href={item.original_url} target="_blank" rel="noopener noreferrer" style={{fontSize:'13px',color:'#999',marginTop:'6px',display:'inline-block'}}>View original &rarr;</a>}
+      </div>
+
+      {/* Draft Reply */}
+      <div style={{padding:'16px 20px'}}>
+        <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'8px'}}>Draft Reply</div>
+        {editingId===item.id ? (
+          <div>
+            <textarea value={editText} onChange={e=>setEditText(e.target.value)} rows={4}
+              style={{width:'100%',padding:'12px 14px',borderRadius:'10px',border:'1px solid #e0e0e0',fontSize:'14px',color:'#111',resize:'none',outline:'none',fontFamily:'inherit'}}
+              onFocus={e=>e.target.style.borderColor='#111'} onBlur={e=>e.target.style.borderColor='#e0e0e0'}
+            />
+            <div style={{display:'flex',gap:'8px',marginTop:'10px'}}>
+              <button onClick={()=>onSaveEdit(item.id)} disabled={actionLoading===item.id} style={{padding:'8px 18px',borderRadius:'8px',background:'#111',color:'#fff',fontSize:'13px',fontWeight:600,border:'none',cursor:'pointer',opacity:actionLoading===item.id?0.5:1}}>Save</button>
+              <button onClick={()=>setEditingId(null)} style={{padding:'8px 18px',borderRadius:'8px',background:'#f5f5f5',color:'#555',fontSize:'13px',fontWeight:500,border:'none',cursor:'pointer'}}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <p style={{fontSize:'14px',color:'#111',lineHeight:1.6}}>
+            {item.edited_reply||item.draft_reply}
+            {item.edited_reply && <span style={{marginLeft:'8px',fontSize:'12px',color:'#999'}}>(edited)</span>}
+          </p>
+        )}
+      </div>
+
+      {/* Actions */}
+      {editingId!==item.id && (
+        <div style={{display:'flex',gap:'8px',padding:'12px 20px',background:'#fafafa',borderTop:'1px solid #f0f0f0'}}>
+          <button
+            onClick={()=>onApprove(item)}
+            disabled={actionLoading===item.id || !extensionConnected}
+            title={!extensionConnected ? 'Connect Chrome extension to post' : stale ? 'This tweet is stale but you can still try' : ''}
+            style={{
+              flex:1,
+              padding:'10px',
+              borderRadius:'10px',
+              background: extensionConnected ? (stale ? '#ff9800' : '#111') : '#ccc',
+              color:'#fff',
+              fontSize:'13px',
+              fontWeight:600,
+              border:'none',
+              cursor: extensionConnected ? 'pointer' : 'not-allowed',
+              opacity:actionLoading===item.id?0.5:1
+            }}>
+            {actionLoading===item.id ? 'Posting...' : (stale ? 'Try Anyway' : 'Approve & Post')}
+          </button>
+          <button onClick={()=>{setEditingId(item.id);setEditText(item.edited_reply||item.draft_reply)}}
+            style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#111',fontSize:'13px',fontWeight:500,border:'1px solid #e0e0e0',cursor:'pointer'}}>
+            Edit
+          </button>
+          <button onClick={()=>onSkip(item.id)}
+            style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#666',fontSize:'13px',fontWeight:500,border:'1px solid #e0e0e0',cursor:'pointer'}}>
+            Skip
+          </button>
+          <button onClick={()=>onReject(item.id)} disabled={actionLoading===item.id}
+            style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#e53e3e',fontSize:'13px',fontWeight:500,border:'1px solid #ffd7d7',cursor:'pointer',opacity:actionLoading===item.id?0.5:1}}>
+            Reject
+          </button>
+        </div>
+      )}
     </div>
   )
 }

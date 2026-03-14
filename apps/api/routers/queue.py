@@ -89,12 +89,17 @@ async def list_pending(
 @router.get("/history")
 async def list_history(
     product_id: str,
+    status: Optional[str] = None,
+    since: Optional[str] = None,
     user_id: str = Depends(get_current_user)
 ):
     """
     Return posted, failed, and rejected items for audit trail.
 
     product_id is REQUIRED to prevent data leaks.
+    Optional filters:
+      - status: filter by specific status (posted, failed, rejected)
+      - since: ISO datetime string, only return items created after this time
     """
     from services.database import supabase
 
@@ -103,7 +108,17 @@ async def list_history(
 
     await verify_product_ownership(user_id, product_id)
 
-    res = supabase.table('reply_queue').select('*').eq('product_id', product_id).neq('status', 'pending').order('created_at', desc=True).limit(100).execute()
+    query = supabase.table('reply_queue').select('*').eq('product_id', product_id)
+
+    if status:
+        query = query.eq('status', status)
+    else:
+        query = query.neq('status', 'pending')
+
+    if since:
+        query = query.gte('created_at', since)
+
+    res = query.order('created_at', desc=True).limit(100).execute()
     return res.data
 
 
