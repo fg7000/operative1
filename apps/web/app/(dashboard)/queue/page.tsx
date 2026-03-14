@@ -3,6 +3,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { useProducts } from '@/lib/product-context'
 import { PLATFORM_COLORS, MODE_COLORS, API_URL } from '@/lib/constants'
 import { apiFetch } from '@/lib/api'
+import { useIsMobile } from '@/lib/hooks'
 import Link from 'next/link'
 
 // Extension ID - set via NEXT_PUBLIC_EXTENSION_ID env var after loading extension in Chrome
@@ -77,6 +78,7 @@ function formatTime(dateStr: string): string {
 
 export default function QueuePage() {
   const { selectedProduct, selectedProductId, loading: productsLoading } = useProducts()
+  const { isMobile } = useIsMobile()
   const [items, setItems] = useState<QueueItem[]>([])
   const [postedToday, setPostedToday] = useState<QueueItem[]>([])
   const [failedToday, setFailedToday] = useState<QueueItem[]>([])
@@ -487,8 +489,6 @@ export default function QueuePage() {
     setActionLoading(null)
   }
 
-  const staleCount = items.filter(isStale).length
-
   // Transition items shown in the pending tab (3s animation)
   const transitionList = Object.values(transitionItems)
 
@@ -509,7 +509,7 @@ export default function QueuePage() {
   if (loading) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'200px',color:'#999',fontSize:'14px'}}>Loading queue...</div>
 
   return (
-    <div style={{maxWidth:'680px'}}>
+    <div style={{maxWidth: isMobile ? '100%' : '680px'}}>
       {/* Extension Status Banner */}
       {extensionConnected === false && (
         <div style={{padding:'12px 16px',marginBottom:'16px',background:'#ffebee',border:'1px solid #ffcdd2',borderRadius:'10px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px'}}>
@@ -560,26 +560,26 @@ export default function QueuePage() {
       )}
 
       {/* Header */}
-      <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:'24px'}}>
+      <div style={{display:'flex',alignItems: isMobile ? 'flex-start' : 'flex-end',justifyContent:'space-between',marginBottom:'24px',flexDirection: isMobile ? 'column' : 'row',gap: isMobile ? '12px' : '0'}}>
         <div>
-          <h1 style={{fontSize:'28px',fontWeight:600,color:'#111',lineHeight:1}}>Reply Queue</h1>
+          <h1 style={{fontSize: isMobile ? '24px' : '28px',fontWeight:600,color:'#111',lineHeight:1}}>Reply Queue</h1>
           <p style={{fontSize:'14px',color:'#999',marginTop:'6px'}}>{selectedProduct.name}</p>
         </div>
         {activeTab === 'pending' && (
-          <div style={{display:'flex',gap:'8px'}}>
+          <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
             <button onClick={smartRank} disabled={ranking || items.length === 0}
-              style={{fontSize:'13px',color:'#111',background:'#fff',border:'1px solid #e0e0e0',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:600,opacity:ranking?0.5:1}}>
+              style={{fontSize:'13px',color:'#111',background:'#fff',border:'1px solid #e0e0e0',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:600,opacity:ranking?0.5:1,minHeight:'44px'}}>
               {ranking ? 'Ranking...' : 'Smart Rank'}
             </button>
             <button onClick={cleanupErrorsAndStale} disabled={cleaning || items.length === 0}
-              style={{fontSize:'13px',color:'#c62828',background:'#fff',border:'1px solid #ffcdd2',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500,opacity:cleaning?0.5:1}}>
-              {cleaning ? 'Cleaning...' : `Clean${staleCount > 0 ? ` (${staleCount} stale)` : ''}`}
+              style={{fontSize:'13px',color:'#c62828',background:'#fff',border:'1px solid #ffcdd2',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500,opacity:cleaning?0.5:1,minHeight:'44px'}}>
+              {cleaning ? 'Cleaning...' : 'Clean'}
             </button>
-            <button onClick={() => { fetchQueue(); fetchPostedToday(); fetchFailedToday() }} style={{fontSize:'13px',color:'#666',background:'#f5f5f5',border:'none',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500}}>Refresh</button>
+            <button onClick={() => { fetchQueue(); fetchPostedToday(); fetchFailedToday() }} style={{fontSize:'13px',color:'#666',background:'#f5f5f5',border:'none',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500,minHeight:'44px'}}>Refresh</button>
           </div>
         )}
         {activeTab !== 'pending' && (
-          <button onClick={() => { fetchPostedToday(); fetchFailedToday() }} style={{fontSize:'13px',color:'#666',background:'#f5f5f5',border:'none',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500}}>Refresh</button>
+          <button onClick={() => { fetchPostedToday(); fetchFailedToday() }} style={{fontSize:'13px',color:'#666',background:'#f5f5f5',border:'none',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500,minHeight:'44px'}}>Refresh</button>
         )}
       </div>
 
@@ -595,7 +595,7 @@ export default function QueuePage() {
             onClick={() => setActiveTab(tab.key)}
             style={{
               flex: 1,
-              padding: '10px 16px',
+              padding: isMobile ? '10px 8px' : '10px 16px',
               borderRadius: '10px',
               border: 'none',
               fontSize: '13px',
@@ -605,6 +605,7 @@ export default function QueuePage() {
               background: activeTab === tab.key ? '#fff' : 'transparent',
               color: activeTab === tab.key ? '#111' : '#999',
               boxShadow: activeTab === tab.key ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              minHeight: isMobile ? '44px' : undefined,
             }}
           >
             {tab.label} ({tab.count})
@@ -659,10 +660,10 @@ export default function QueuePage() {
           ))}
 
           {items.length === 0 && transitionList.length === 0 && (
-            <div style={{textAlign:'center',padding:'80px 40px',background:'#fafafa',borderRadius:'16px',border:'1px solid #e8e8e8'}}>
+            <div style={{textAlign:'center',padding: isMobile ? '60px 20px' : '80px 40px',background:'#fafafa',borderRadius:'16px',border:'1px solid #e8e8e8'}}>
               <div style={{fontSize:'32px',marginBottom:'12px'}}>&#10003;</div>
               <p style={{fontSize:'15px',fontWeight:500,color:'#111'}}>Queue is empty</p>
-              <p style={{fontSize:'13px',color:'#999',marginTop:'4px'}}>New replies appear automatically</p>
+              <p style={{fontSize: isMobile ? '14px' : '13px',color:'#999',marginTop:'4px'}}>New replies appear automatically</p>
             </div>
           )}
 
@@ -671,6 +672,7 @@ export default function QueuePage() {
               key={item.id}
               item={item}
               idx={idx}
+              isMobile={isMobile}
               rankNotes={rankNotes}
               extensionConnected={extensionConnected}
               actionLoading={actionLoading}
@@ -691,9 +693,9 @@ export default function QueuePage() {
       {activeTab === 'posted' && (
         <div style={{display:'flex',flexDirection:'column',gap:'16px'}}>
           {postedToday.length === 0 && (
-            <div style={{textAlign:'center',padding:'80px 40px',background:'#fafafa',borderRadius:'16px',border:'1px solid #e8e8e8'}}>
+            <div style={{textAlign:'center',padding: isMobile ? '60px 20px' : '80px 40px',background:'#fafafa',borderRadius:'16px',border:'1px solid #e8e8e8'}}>
               <p style={{fontSize:'15px',fontWeight:500,color:'#111'}}>No posts today yet</p>
-              <p style={{fontSize:'13px',color:'#999',marginTop:'4px'}}>Approved replies will appear here</p>
+              <p style={{fontSize: isMobile ? '14px' : '13px',color:'#999',marginTop:'4px'}}>Approved replies will appear here</p>
             </div>
           )}
 
@@ -705,7 +707,7 @@ export default function QueuePage() {
             return (
               <div key={item.id} style={{borderRadius:'16px',border:'1px solid #c8e6c9',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(0,0,0,0.05)'}}>
                 {/* Header */}
-                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'#f1f8e9',borderBottom:'1px solid #c8e6c9',flexWrap:'wrap',gap:'8px'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding: isMobile ? '12px 16px' : '12px 20px',background:'#f1f8e9',borderBottom:'1px solid #c8e6c9',flexWrap:'wrap',gap:'8px'}}>
                   <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
                     <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',color:'#fff',background:'#4caf50',textTransform:'uppercase',letterSpacing:'0.05em'}}>Posted</span>
                     <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',color:'#fff',background:PLATFORM_COLORS[item.platform]||'#111',textTransform:'uppercase',letterSpacing:'0.05em'}}>{item.platform}</span>
@@ -714,7 +716,7 @@ export default function QueuePage() {
                         {replyMode.replace('_', ' ')}
                       </span>
                     )}
-                    <span style={{fontSize:'13px',color:'#999'}}>@{item.original_author}</span>
+                    <span style={{fontSize: isMobile ? '14px' : '13px',color:'#999'}}>@{item.original_author}</span>
                   </div>
                   <span style={{fontSize:'12px',color:'#66bb6a',fontWeight:500}}>
                     {item.posted_at ? formatTime(item.posted_at) : (item.created_at ? formatTime(item.created_at) : '')}
@@ -722,14 +724,14 @@ export default function QueuePage() {
                 </div>
 
                 {/* Original Post */}
-                <div style={{padding:'14px 20px',borderBottom:'1px solid #f5f5f5'}}>
+                <div style={{padding: isMobile ? '14px 16px' : '14px 20px',borderBottom:'1px solid #f5f5f5'}}>
                   <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'6px'}}>Original Post</div>
                   <p style={{fontSize:'14px',color:'#555',lineHeight:1.6}}>{item.original_content}</p>
-                  {item.original_url && <a href={item.original_url} target="_blank" rel="noopener noreferrer" style={{fontSize:'12px',color:'#999',marginTop:'4px',display:'inline-block'}}>View original &rarr;</a>}
+                  {item.original_url && <a href={item.original_url} target="_blank" rel="noopener noreferrer" style={{fontSize: isMobile ? '14px' : '12px',color:'#999',marginTop:'4px',display:'inline-block'}}>View original &rarr;</a>}
                 </div>
 
                 {/* Posted Reply */}
-                <div style={{padding:'14px 20px'}}>
+                <div style={{padding: isMobile ? '14px 16px' : '14px 20px'}}>
                   <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'6px'}}>Posted Reply</div>
                   <p style={{fontSize:'14px',color:'#111',lineHeight:1.6}}>{item.edited_reply || item.draft_reply}</p>
                   {postedTweetId && (
@@ -738,9 +740,10 @@ export default function QueuePage() {
                       target="_blank" rel="noopener noreferrer"
                       style={{
                         display:'inline-flex',alignItems:'center',gap:'6px',
-                        marginTop:'10px',fontSize:'13px',fontWeight:600,
+                        marginTop:'10px',fontSize: isMobile ? '14px' : '13px',fontWeight:600,
                         color:'#1da1f2',textDecoration:'none',
-                        padding:'6px 14px',background:'#e8f4fd',borderRadius:'8px'
+                        padding:'6px 14px',background:'#e8f4fd',borderRadius:'8px',
+                        minHeight: isMobile ? '44px' : undefined,
                       }}
                     >
                       View on Twitter &rarr;
@@ -757,9 +760,9 @@ export default function QueuePage() {
       {activeTab === 'failed' && (
         <div style={{display:'flex',flexDirection:'column',gap:'16px'}}>
           {failedToday.length === 0 && (
-            <div style={{textAlign:'center',padding:'80px 40px',background:'#fafafa',borderRadius:'16px',border:'1px solid #e8e8e8'}}>
+            <div style={{textAlign:'center',padding: isMobile ? '60px 20px' : '80px 40px',background:'#fafafa',borderRadius:'16px',border:'1px solid #e8e8e8'}}>
               <p style={{fontSize:'15px',fontWeight:500,color:'#111'}}>No failures today</p>
-              <p style={{fontSize:'13px',color:'#999',marginTop:'4px'}}>Failed posts will appear here with retry options</p>
+              <p style={{fontSize: isMobile ? '14px' : '13px',color:'#999',marginTop:'4px'}}>Failed posts will appear here with retry options</p>
             </div>
           )}
 
@@ -770,7 +773,7 @@ export default function QueuePage() {
             return (
               <div key={item.id} style={{borderRadius:'16px',border:'1px solid #ffcdd2',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(0,0,0,0.05)'}}>
                 {/* Header */}
-                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'#fce4ec',borderBottom:'1px solid #ffcdd2',flexWrap:'wrap',gap:'8px'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding: isMobile ? '12px 16px' : '12px 20px',background:'#fce4ec',borderBottom:'1px solid #ffcdd2',flexWrap:'wrap',gap:'8px'}}>
                   <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
                     <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',color:'#fff',background:'#e53935',textTransform:'uppercase',letterSpacing:'0.05em'}}>Failed</span>
                     <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',color:'#fff',background:PLATFORM_COLORS[item.platform]||'#111',textTransform:'uppercase',letterSpacing:'0.05em'}}>{item.platform}</span>
@@ -779,7 +782,7 @@ export default function QueuePage() {
                         {replyMode.replace('_', ' ')}
                       </span>
                     )}
-                    <span style={{fontSize:'13px',color:'#999'}}>@{item.original_author}</span>
+                    <span style={{fontSize: isMobile ? '14px' : '13px',color:'#999'}}>@{item.original_author}</span>
                   </div>
                   <span style={{fontSize:'12px',color:'#e57373',fontWeight:500}}>
                     {item.created_at ? formatTime(item.created_at) : ''}
@@ -788,20 +791,20 @@ export default function QueuePage() {
 
                 {/* Error reason */}
                 {item.rejection_reason && (
-                  <div style={{padding:'10px 20px',background:'#ffebee',borderBottom:'1px solid #ffcdd2',fontSize:'13px',color:'#c62828'}}>
+                  <div style={{padding: isMobile ? '10px 16px' : '10px 20px',background:'#ffebee',borderBottom:'1px solid #ffcdd2',fontSize: isMobile ? '14px' : '13px',color:'#c62828'}}>
                     {item.rejection_reason}
                   </div>
                 )}
 
                 {/* Original Post */}
-                <div style={{padding:'14px 20px',borderBottom:'1px solid #f5f5f5'}}>
+                <div style={{padding: isMobile ? '14px 16px' : '14px 20px',borderBottom:'1px solid #f5f5f5'}}>
                   <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'6px'}}>Original Post</div>
                   <p style={{fontSize:'14px',color:'#555',lineHeight:1.6}}>{item.original_content}</p>
-                  {item.original_url && <a href={item.original_url} target="_blank" rel="noopener noreferrer" style={{fontSize:'12px',color:'#999',marginTop:'4px',display:'inline-block'}}>View original &rarr;</a>}
+                  {item.original_url && <a href={item.original_url} target="_blank" rel="noopener noreferrer" style={{fontSize: isMobile ? '14px' : '12px',color:'#999',marginTop:'4px',display:'inline-block'}}>View original &rarr;</a>}
                 </div>
 
                 {/* Draft Reply + Retry */}
-                <div style={{padding:'14px 20px',display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'16px'}}>
+                <div style={{padding: isMobile ? '14px 16px' : '14px 20px',display:'flex',alignItems: isMobile ? 'stretch' : 'flex-start',justifyContent:'space-between',gap:'16px',flexDirection: isMobile ? 'column' : 'row'}}>
                   <div style={{flex:1}}>
                     <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'6px'}}>Draft Reply</div>
                     <p style={{fontSize:'14px',color:'#111',lineHeight:1.6}}>{item.edited_reply || item.draft_reply}</p>
@@ -812,10 +815,11 @@ export default function QueuePage() {
                       disabled={actionLoading === item.id}
                       style={{
                         padding:'8px 18px',borderRadius:'8px',
-                        background:'#111',color:'#fff',fontSize:'13px',
+                        background:'#111',color:'#fff',fontSize: isMobile ? '14px' : '13px',
                         fontWeight:600,border:'none',cursor:'pointer',
                         whiteSpace:'nowrap',opacity: actionLoading === item.id ? 0.5 : 1,
-                        marginTop:'20px'
+                        marginTop: isMobile ? '10px' : '20px',
+                        minHeight: isMobile ? '44px' : undefined,
                       }}
                     >
                       {actionLoading === item.id ? 'Retrying...' : 'Retry'}
@@ -840,8 +844,9 @@ export default function QueuePage() {
 }
 
 // Extracted pending card component to keep the main component cleaner
-function PendingCard({ item, idx, rankNotes, extensionConnected, actionLoading, editingId, editText, setEditText, setEditingId, onApprove, onReject, onSkip, onSaveEdit }: {
+function PendingCard({ item, idx, isMobile, rankNotes, extensionConnected, actionLoading, editingId, editText, setEditText, setEditingId, onApprove, onReject, onSkip, onSaveEdit }: {
   item: QueueItem; idx: number
+  isMobile: boolean
   rankNotes: Record<string,string>
   extensionConnected: boolean | null
   actionLoading: string | null
@@ -866,7 +871,7 @@ function PendingCard({ item, idx, rankNotes, extensionConnected, actionLoading, 
   return (
     <div style={{borderRadius:'16px',border: stale ? '2px solid #ff9800' : '1px solid #e8e8e8',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(0,0,0,0.05)',opacity: stale ? 0.8 : 1}}>
       {/* Header */}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'#fafafa',borderBottom:'1px solid #f0f0f0',flexWrap:'wrap',gap:'8px'}}>
+      <div style={{display:'flex',alignItems: isMobile ? 'flex-start' : 'center',justifyContent:'space-between',padding: isMobile ? '12px 16px' : '12px 20px',background:'#fafafa',borderBottom:'1px solid #f0f0f0',flexWrap:'wrap',gap:'8px',flexDirection: isMobile ? 'column' : 'row'}}>
         <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
           <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',color:'#fff',background:PLATFORM_COLORS[item.platform]||'#111',textTransform:'uppercase',letterSpacing:'0.05em'}}>{item.platform}</span>
           {stale && (
@@ -882,13 +887,13 @@ function PendingCard({ item, idx, rankNotes, extensionConnected, actionLoading, 
           {originalLang && originalLang !== 'en' && (
             <span style={{fontSize:'10px',fontWeight:600,padding:'3px 8px',borderRadius:'20px',background:'#fce4ec',color:'#c62828',textTransform:'uppercase'}}>{originalLang}</span>
           )}
-          <span style={{fontSize:'13px',color:'#999'}}>@{item.original_author}</span>
+          <span style={{fontSize: isMobile ? '14px' : '13px',color:'#999'}}>@{item.original_author}</span>
         </div>
-        <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+        <div style={{display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap'}}>
           {relevanceScore != null && (
-            <span style={{fontSize:'13px',color:'#999'}}>Relevance <strong style={{color:'#111'}}>{relevanceScore}/10</strong></span>
+            <span style={{fontSize: isMobile ? '14px' : '13px',color:'#999'}}>Relevance <strong style={{color:'#111'}}>{relevanceScore}/10</strong></span>
           )}
-          <span style={{fontSize:'13px',color:'#999'}}>Confidence <strong style={{color:'#111'}}>{Math.round((item.confidence_score||0)*100)}%</strong></span>
+          <span style={{fontSize: isMobile ? '14px' : '13px',color:'#999'}}>Confidence <strong style={{color:'#111'}}>{Math.round((item.confidence_score||0)*100)}%</strong></span>
           {item.mentions_product && <span style={{fontSize:'11px',fontWeight:500,padding:'3px 10px',borderRadius:'20px',background:'#f0f0f0',color:'#555'}}>mentions product</span>}
         </div>
       </div>
@@ -902,36 +907,36 @@ function PendingCard({ item, idx, rankNotes, extensionConnected, actionLoading, 
 
       {/* Relevance Reason */}
       {relevanceReason && (
-        <div style={{padding:'8px 20px',background:'#f8f9fa',borderBottom:'1px solid #f0f0f0',fontSize:'13px',color:'#666',fontStyle:'italic'}}>
+        <div style={{padding: isMobile ? '8px 16px' : '8px 20px',background:'#f8f9fa',borderBottom:'1px solid #f0f0f0',fontSize: isMobile ? '14px' : '13px',color:'#666',fontStyle:'italic'}}>
           {relevanceReason}
         </div>
       )}
 
       {/* Original Post */}
-      <div style={{padding:'16px 20px',borderBottom:'1px solid #f5f5f5'}}>
+      <div style={{padding: isMobile ? '16px 16px' : '16px 20px',borderBottom:'1px solid #f5f5f5'}}>
         <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'8px'}}>Original Post</div>
         <p style={{fontSize:'14px',color:'#111',lineHeight:1.6}}>{item.original_content}</p>
         {translatedContent && (
           <div style={{marginTop:'10px',padding:'10px 14px',background:'#f5f5f5',borderRadius:'8px',border:'1px solid #eee'}}>
             <div style={{fontSize:'10px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'4px'}}>Translated</div>
-            <p style={{fontSize:'13px',color:'#444',lineHeight:1.5}}>{translatedContent}</p>
+            <p style={{fontSize: isMobile ? '14px' : '13px',color:'#444',lineHeight:1.5}}>{translatedContent}</p>
           </div>
         )}
-        {item.original_url && <a href={item.original_url} target="_blank" rel="noopener noreferrer" style={{fontSize:'13px',color:'#999',marginTop:'6px',display:'inline-block'}}>View original &rarr;</a>}
+        {item.original_url && <a href={item.original_url} target="_blank" rel="noopener noreferrer" style={{fontSize: isMobile ? '14px' : '13px',color:'#999',marginTop:'6px',display:'inline-block'}}>View original &rarr;</a>}
       </div>
 
       {/* Draft Reply */}
-      <div style={{padding:'16px 20px'}}>
+      <div style={{padding: isMobile ? '16px 16px' : '16px 20px'}}>
         <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'8px'}}>Draft Reply</div>
         {editingId===item.id ? (
           <div>
             <textarea value={editText} onChange={e=>setEditText(e.target.value)} rows={4}
-              style={{width:'100%',padding:'12px 14px',borderRadius:'10px',border:'1px solid #e0e0e0',fontSize:'14px',color:'#111',resize:'none',outline:'none',fontFamily:'inherit'}}
+              style={{width:'100%',padding:'12px 14px',borderRadius:'10px',border:'1px solid #e0e0e0',fontSize:'14px',color:'#111',resize:'none',outline:'none',fontFamily:'inherit',boxSizing:'border-box'}}
               onFocus={e=>e.target.style.borderColor='#111'} onBlur={e=>e.target.style.borderColor='#e0e0e0'}
             />
             <div style={{display:'flex',gap:'8px',marginTop:'10px'}}>
-              <button onClick={()=>onSaveEdit(item.id)} disabled={actionLoading===item.id} style={{padding:'8px 18px',borderRadius:'8px',background:'#111',color:'#fff',fontSize:'13px',fontWeight:600,border:'none',cursor:'pointer',opacity:actionLoading===item.id?0.5:1}}>Save</button>
-              <button onClick={()=>setEditingId(null)} style={{padding:'8px 18px',borderRadius:'8px',background:'#f5f5f5',color:'#555',fontSize:'13px',fontWeight:500,border:'none',cursor:'pointer'}}>Cancel</button>
+              <button onClick={()=>onSaveEdit(item.id)} disabled={actionLoading===item.id} style={{padding:'8px 18px',borderRadius:'8px',background:'#111',color:'#fff',fontSize: isMobile ? '14px' : '13px',fontWeight:600,border:'none',cursor:'pointer',opacity:actionLoading===item.id?0.5:1,minHeight: isMobile ? '44px' : undefined}}>Save</button>
+              <button onClick={()=>setEditingId(null)} style={{padding:'8px 18px',borderRadius:'8px',background:'#f5f5f5',color:'#555',fontSize: isMobile ? '14px' : '13px',fontWeight:500,border:'none',cursor:'pointer',minHeight: isMobile ? '44px' : undefined}}>Cancel</button>
             </div>
           </div>
         ) : (
@@ -944,35 +949,36 @@ function PendingCard({ item, idx, rankNotes, extensionConnected, actionLoading, 
 
       {/* Actions */}
       {editingId!==item.id && (
-        <div style={{display:'flex',gap:'8px',padding:'12px 20px',background:'#fafafa',borderTop:'1px solid #f0f0f0'}}>
+        <div style={{display:'flex',gap:'8px',padding: isMobile ? '12px 16px' : '12px 20px',background:'#fafafa',borderTop:'1px solid #f0f0f0',flexWrap: isMobile ? 'wrap' : 'nowrap'}}>
           <button
             onClick={()=>onApprove(item)}
             disabled={actionLoading===item.id || !extensionConnected}
             title={!extensionConnected ? 'Connect Chrome extension to post' : stale ? 'This tweet is stale but you can still try' : ''}
             style={{
-              flex:1,
+              flex: isMobile ? '1 1 100%' : 1,
               padding:'10px',
               borderRadius:'10px',
               background: extensionConnected ? (stale ? '#ff9800' : '#111') : '#ccc',
               color:'#fff',
-              fontSize:'13px',
+              fontSize: isMobile ? '14px' : '13px',
               fontWeight:600,
               border:'none',
               cursor: extensionConnected ? 'pointer' : 'not-allowed',
-              opacity:actionLoading===item.id?0.5:1
+              opacity:actionLoading===item.id?0.5:1,
+              minHeight: isMobile ? '44px' : undefined,
             }}>
             {actionLoading===item.id ? 'Posting...' : (stale ? 'Try Anyway' : 'Approve & Post')}
           </button>
           <button onClick={()=>{setEditingId(item.id);setEditText(item.edited_reply||item.draft_reply)}}
-            style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#111',fontSize:'13px',fontWeight:500,border:'1px solid #e0e0e0',cursor:'pointer'}}>
+            style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#111',fontSize: isMobile ? '14px' : '13px',fontWeight:500,border:'1px solid #e0e0e0',cursor:'pointer',minHeight: isMobile ? '44px' : undefined,flex: isMobile ? '1 1 0%' : undefined}}>
             Edit
           </button>
           <button onClick={()=>onSkip(item.id)}
-            style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#666',fontSize:'13px',fontWeight:500,border:'1px solid #e0e0e0',cursor:'pointer'}}>
+            style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#666',fontSize: isMobile ? '14px' : '13px',fontWeight:500,border:'1px solid #e0e0e0',cursor:'pointer',minHeight: isMobile ? '44px' : undefined,flex: isMobile ? '1 1 0%' : undefined}}>
             Skip
           </button>
           <button onClick={()=>onReject(item.id)} disabled={actionLoading===item.id}
-            style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#e53e3e',fontSize:'13px',fontWeight:500,border:'1px solid #ffd7d7',cursor:'pointer',opacity:actionLoading===item.id?0.5:1}}>
+            style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#e53e3e',fontSize: isMobile ? '14px' : '13px',fontWeight:500,border:'1px solid #ffd7d7',cursor:'pointer',opacity:actionLoading===item.id?0.5:1,minHeight: isMobile ? '44px' : undefined,flex: isMobile ? '1 1 0%' : undefined}}>
             Reject
           </button>
         </div>

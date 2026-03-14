@@ -4,6 +4,7 @@ import { useProducts, Product } from '@/lib/product-context'
 import { apiFetch } from '@/lib/api'
 import { createClient } from '@/lib/supabase-client'
 import { PLATFORM_COLORS } from '@/lib/constants'
+import { useIsMobile } from '@/lib/hooks'
 import Link from 'next/link'
 
 // Extension ID - set via env var
@@ -60,6 +61,7 @@ const DAYS_OF_WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export default function SettingsPage() {
   const { selectedProduct, selectedProductId, refreshProducts, loading: productsLoading } = useProducts()
+  const { isMobile } = useIsMobile()
   const [email, setEmail] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [twitterStatus, setTwitterStatus] = useState<TwitterStatus | null>(null)
@@ -300,14 +302,14 @@ export default function SettingsPage() {
   }
 
   return (
-    <div style={{maxWidth:'700px'}}>
+    <div style={{maxWidth: isMobile ? '100%' : '700px'}}>
       <h1 style={{fontSize:'28px',fontWeight:600,color:'#111',marginBottom:'8px'}}>Settings</h1>
-      <p style={{fontSize:'14px',color:'#999',marginBottom:'32px'}}>{selectedProduct.name} — Manage product settings and connections</p>
+      <p style={{fontSize: isMobile ? '14px' : '14px',color:'#999',marginBottom: isMobile ? '20px' : '32px'}}>{selectedProduct.name} — Manage product settings and connections</p>
 
       {/* Account Section */}
-      <div style={{marginBottom:'32px'}}>
+      <div style={{marginBottom: isMobile ? '24px' : '32px'}}>
         <h2 style={{fontSize:'16px',fontWeight:600,color:'#111',marginBottom:'16px'}}>Account</h2>
-        <div style={{padding:'16px 20px',background:'#fafafa',borderRadius:'12px',border:'1px solid #e8e8e8'}}>
+        <div style={{padding: isMobile ? '12px 14px' : '16px 20px',background:'#fafafa',borderRadius:'12px',border:'1px solid #e8e8e8'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
             <div>
               <div style={{fontSize:'12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'4px'}}>Email</div>
@@ -324,9 +326,9 @@ export default function SettingsPage() {
       </div>
 
       {/* Twitter Connection Section */}
-      <div style={{marginBottom:'32px'}}>
+      <div style={{marginBottom: isMobile ? '24px' : '32px'}}>
         <h2 style={{fontSize:'16px',fontWeight:600,color:'#111',marginBottom:'16px'}}>Twitter Connection</h2>
-        <div style={{padding:'20px',background:'#fff',borderRadius:'12px',border:'1px solid #e8e8e8'}}>
+        <div style={{padding: isMobile ? '14px' : '20px',background:'#fff',borderRadius:'12px',border:'1px solid #e8e8e8'}}>
           {loadingTwitter ? (
             <div style={{color:'#999',fontSize:'14px'}}>Checking connection...</div>
           ) : twitterStatus?.connected ? (
@@ -342,7 +344,7 @@ export default function SettingsPage() {
                 <button
                   onClick={disconnectTwitter}
                   disabled={disconnecting}
-                  style={{padding:'6px 12px',borderRadius:'6px',background:'#fff',border:'1px solid #e53935',color:'#e53935',fontSize:'12px',fontWeight:500,cursor:'pointer',opacity:disconnecting?0.5:1}}
+                  style={{padding:'6px 12px',borderRadius:'6px',background:'#fff',border:'1px solid #e53935',color:'#e53935',fontSize:'12px',fontWeight:500,cursor:'pointer',opacity:disconnecting?0.5:1,minHeight:'44px'}}
                 >
                   {disconnecting ? 'Disconnecting...' : 'Disconnect'}
                 </button>
@@ -372,14 +374,14 @@ export default function SettingsPage() {
                     display:'inline-flex',alignItems:'center',gap:'8px',
                     padding:'10px 16px',background:'#111',color:'#fff',
                     borderRadius:'6px',fontSize:'13px',fontWeight:600,
-                    textDecoration:'none'
+                    textDecoration:'none',minHeight:'44px'
                   }}
                 >
                   Install Extension
                 </Link>
                 <button
                   onClick={() => checkExtension()}
-                  style={{marginLeft:'8px',padding:'10px 16px',background:'#fff',color:'#666',border:'1px solid #e0e0e0',borderRadius:'6px',fontSize:'13px',fontWeight:500,cursor:'pointer'}}
+                  style={{marginLeft:'8px',padding:'10px 16px',background:'#fff',color:'#666',border:'1px solid #e0e0e0',borderRadius:'6px',fontSize:'13px',fontWeight:500,cursor:'pointer',minHeight:'44px'}}
                 >
                   Check Again
                 </button>
@@ -449,63 +451,63 @@ export default function SettingsPage() {
       </div>
 
       {/* Product Settings Section */}
-      <div style={{marginBottom:'32px'}}>
+      <div style={{marginBottom: isMobile ? '24px' : '32px'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px'}}>
           <h2 style={{fontSize:'16px',fontWeight:600,color:'#111'}}>Product Settings</h2>
           {!editing && (
             <button
               onClick={() => { resetEditState(); setEditing(true) }}
-              style={{padding:'6px 14px',borderRadius:'6px',background:'#111',color:'#fff',fontSize:'12px',fontWeight:500,border:'none',cursor:'pointer'}}
+              style={{padding:'6px 14px',borderRadius:'6px',background:'#111',color:'#fff',fontSize:'12px',fontWeight:500,border:'none',cursor:'pointer',minHeight:'44px'}}
             >
               Edit
             </button>
           )}
         </div>
 
-        <div style={{padding:'20px',background:'#fff',borderRadius:'12px',border:'1px solid #e8e8e8'}}>
+        <div style={{padding: isMobile ? '14px' : '20px',background:'#fff',borderRadius:'12px',border:'1px solid #e8e8e8'}}>
           {editing ? (
             <div style={{display:'flex',flexDirection:'column',gap:'20px'}}>
               {/* Name */}
               <div>
-                <label style={{display:'block',fontSize:'12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'6px'}}>Name</label>
+                <label style={{display:'block',fontSize: isMobile ? '14px' : '12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'6px'}}>Name</label>
                 <input
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   maxLength={100}
-                  style={{width:'100%',padding:'10px 12px',borderRadius:'8px',border:'1px solid #e0e0e0',fontSize:'14px',outline:'none'}}
+                  style={{width:'100%',padding:'10px 12px',borderRadius:'8px',border:'1px solid #e0e0e0',fontSize: isMobile ? '16px' : '14px',outline:'none',boxSizing:'border-box'}}
                 />
               </div>
 
               {/* Description */}
               <div>
-                <label style={{display:'block',fontSize:'12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'6px'}}>Description</label>
+                <label style={{display:'block',fontSize: isMobile ? '14px' : '12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'6px'}}>Description</label>
                 <textarea
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value)}
                   rows={3}
-                  style={{width:'100%',padding:'10px 12px',borderRadius:'8px',border:'1px solid #e0e0e0',fontSize:'14px',outline:'none',resize:'vertical',fontFamily:'inherit'}}
+                  style={{width:'100%',padding:'10px 12px',borderRadius:'8px',border:'1px solid #e0e0e0',fontSize: isMobile ? '16px' : '14px',outline:'none',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}
                 />
               </div>
 
               {/* System Prompt */}
               <div>
-                <label style={{display:'block',fontSize:'12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'6px'}}>System Prompt</label>
+                <label style={{display:'block',fontSize: isMobile ? '14px' : '12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'6px'}}>System Prompt</label>
                 <textarea
                   value={editSystemPrompt}
                   onChange={(e) => setEditSystemPrompt(e.target.value)}
                   rows={4}
                   maxLength={2000}
                   placeholder="Instructions for the AI when generating replies..."
-                  style={{width:'100%',padding:'10px 12px',borderRadius:'8px',border:'1px solid #e0e0e0',fontSize:'14px',outline:'none',resize:'vertical',fontFamily:'inherit'}}
+                  style={{width:'100%',padding:'10px 12px',borderRadius:'8px',border:'1px solid #e0e0e0',fontSize: isMobile ? '16px' : '14px',outline:'none',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}
                 />
                 <div style={{fontSize:'11px',color:'#999',marginTop:'4px'}}>{editSystemPrompt.length}/2000</div>
               </div>
 
               {/* Keywords by platform */}
               <div>
-                <label style={{display:'block',fontSize:'12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'12px'}}>Keywords by Platform</label>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}}>
+                <label style={{display:'block',fontSize: isMobile ? '14px' : '12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'12px'}}>Keywords by Platform</label>
+                <div style={{display:'grid',gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',gap:'16px'}}>
                   {['twitter', 'reddit', 'linkedin', 'hn'].map(platform => (
                     <div key={platform}>
                       <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'6px'}}>
@@ -517,7 +519,7 @@ export default function SettingsPage() {
                         onChange={(e) => setEditKeywords(prev => ({ ...prev, [platform]: e.target.value }))}
                         rows={4}
                         placeholder="One keyword per line"
-                        style={{width:'100%',padding:'8px 10px',borderRadius:'6px',border:'1px solid #e0e0e0',fontSize:'12px',outline:'none',resize:'vertical',fontFamily:'inherit'}}
+                        style={{width:'100%',padding:'8px 10px',borderRadius:'6px',border:'1px solid #e0e0e0',fontSize: isMobile ? '16px' : '12px',outline:'none',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box'}}
                       />
                     </div>
                   ))}
@@ -525,14 +527,14 @@ export default function SettingsPage() {
               </div>
 
               {/* Product Mention Strategy */}
-              <div style={{borderTop:'1px solid #e8e8e8',paddingTop:'20px'}}>
-                <label style={{display:'block',fontSize:'12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'12px'}}>Product Mention in Replies</label>
-                <p style={{fontSize:'12px',color:'#666',marginBottom:'12px'}}>
+              <div style={{borderTop:'1px solid #e8e8e8',paddingTop: isMobile ? '16px' : '20px'}}>
+                <label style={{display:'block',fontSize: isMobile ? '14px' : '12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'12px'}}>Product Mention in Replies</label>
+                <p style={{fontSize: isMobile ? '14px' : '12px',color:'#666',marginBottom:'12px'}}>
                   How should we link to your product when generating replies?
                 </p>
 
                 {/* Strategy Selection */}
-                <div style={{display:'flex',gap:'8px',marginBottom:'16px'}}>
+                <div style={{display:'flex',flexDirection: isMobile ? 'column' : 'row',gap:'8px',marginBottom:'16px'}}>
                   {[
                     { key: 'website', label: 'Website link', desc: 'Recommended' },
                     { key: 'handle', label: 'Twitter profile', desc: '' },
@@ -541,10 +543,10 @@ export default function SettingsPage() {
                     <button key={opt.key} type="button"
                       onClick={() => setEditMentionStrategy(opt.key as MentionStrategy)}
                       style={{
-                        flex:1,padding:'10px',borderRadius:'8px',fontSize:'12px',fontWeight:500,
+                        flex:1,padding:'10px',borderRadius:'8px',fontSize: isMobile ? '14px' : '12px',fontWeight:500,
                         border: editMentionStrategy === opt.key ? '2px solid #111' : '1px solid #e0e0e0',
                         background: editMentionStrategy === opt.key ? '#f5f5f5' : '#fff',
-                        color:'#111',cursor:'pointer',textAlign:'center'
+                        color:'#111',cursor:'pointer',textAlign:'center',minHeight:'44px'
                       }}>
                       {opt.label}
                       {opt.desc && <span style={{display:'block',fontSize:'10px',color:'#666',marginTop:'2px'}}>{opt.desc}</span>}
@@ -553,9 +555,9 @@ export default function SettingsPage() {
                 </div>
 
                 {/* Input fields */}
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}}>
+                <div style={{display:'grid',gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',gap:'12px'}}>
                   <div>
-                    <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>
+                    <label style={{display:'block',fontSize: isMobile ? '14px' : '10px',color:'#999',marginBottom:'4px'}}>
                       Website URL {(editMentionStrategy === 'website' || editMentionStrategy === 'mix') && <span style={{color:'#e53935'}}>*</span>}
                     </label>
                     <input
@@ -563,12 +565,12 @@ export default function SettingsPage() {
                       value={editWebsiteUrl}
                       onChange={(e) => setEditWebsiteUrl(e.target.value)}
                       placeholder="e.g. burnchat.ai"
-                      style={{width:'100%',padding:'8px 10px',borderRadius:'6px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                      style={{width:'100%',padding:'8px 10px',borderRadius:'6px',border:'1px solid #e0e0e0',fontSize: isMobile ? '16px' : '12px',boxSizing:'border-box'}}
                     />
-                    <div style={{fontSize:'10px',color:'#999',marginTop:'4px'}}>Becomes a clickable link</div>
+                    <div style={{fontSize: isMobile ? '12px' : '10px',color:'#999',marginTop:'4px'}}>Becomes a clickable link</div>
                   </div>
                   <div>
-                    <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>
+                    <label style={{display:'block',fontSize: isMobile ? '14px' : '10px',color:'#999',marginBottom:'4px'}}>
                       Twitter Handle {(editMentionStrategy === 'handle' || editMentionStrategy === 'mix') && <span style={{color:'#e53935'}}>*</span>}
                     </label>
                     <input
@@ -576,9 +578,9 @@ export default function SettingsPage() {
                       value={editTwitterHandle}
                       onChange={(e) => setEditTwitterHandle(e.target.value)}
                       placeholder="e.g. @BurnChatAI"
-                      style={{width:'100%',padding:'8px 10px',borderRadius:'6px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                      style={{width:'100%',padding:'8px 10px',borderRadius:'6px',border:'1px solid #e0e0e0',fontSize: isMobile ? '16px' : '12px',boxSizing:'border-box'}}
                     />
-                    <div style={{fontSize:'10px',color:'#999',marginTop:'4px'}}>Links to your profile</div>
+                    <div style={{fontSize: isMobile ? '12px' : '10px',color:'#999',marginTop:'4px'}}>Links to your profile</div>
                   </div>
                 </div>
 
@@ -591,9 +593,9 @@ export default function SettingsPage() {
               </div>
 
               {/* Fire Rate Controls */}
-              <div style={{borderTop:'1px solid #e8e8e8',paddingTop:'20px'}}>
-                <label style={{display:'block',fontSize:'12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'12px'}}>Posting Limits</label>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}}>
+              <div style={{borderTop:'1px solid #e8e8e8',paddingTop: isMobile ? '16px' : '20px'}}>
+                <label style={{display:'block',fontSize: isMobile ? '14px' : '12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'12px'}}>Posting Limits</label>
+                <div style={{display:'grid',gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',gap:'16px'}}>
                   {['twitter', 'reddit'].map(platform => (
                     <div key={platform} style={{padding:'12px',background:'#f8f9fa',borderRadius:'8px'}}>
                       <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'8px'}}>
@@ -628,22 +630,22 @@ export default function SettingsPage() {
                   ))}
                 </div>
                 <div style={{marginTop:'12px'}}>
-                  <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Minimum seconds between posts</label>
+                  <label style={{display:'block',fontSize: isMobile ? '14px' : '10px',color:'#999',marginBottom:'4px'}}>Minimum seconds between posts</label>
                   <input
                     type="number"
                     min={30}
                     max={3600}
                     value={editMinDelay}
                     onChange={(e) => setEditMinDelay(parseInt(e.target.value) || 120)}
-                    style={{width:'120px',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                    style={{width: isMobile ? '100%' : '120px',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize: isMobile ? '16px' : '12px',boxSizing:'border-box'}}
                   />
                 </div>
               </div>
 
               {/* Posting Hours */}
-              <div style={{borderTop:'1px solid #e8e8e8',paddingTop:'20px'}}>
+              <div style={{borderTop:'1px solid #e8e8e8',paddingTop: isMobile ? '16px' : '20px'}}>
                 <div style={{display:'flex',alignItems:'center',gap:'12px',marginBottom:'12px'}}>
-                  <label style={{fontSize:'12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999'}}>Posting Hours</label>
+                  <label style={{fontSize: isMobile ? '14px' : '12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999'}}>Posting Hours</label>
                   <label style={{display:'flex',alignItems:'center',gap:'6px',cursor:'pointer'}}>
                     <input
                       type="checkbox"
@@ -655,37 +657,37 @@ export default function SettingsPage() {
                 </div>
                 {editPostingHours.enabled && (
                   <div style={{padding:'12px',background:'#f8f9fa',borderRadius:'8px'}}>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'12px',marginBottom:'12px'}}>
+                    <div style={{display:'grid',gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr',gap:'12px',marginBottom:'12px'}}>
                       <div>
-                        <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Timezone</label>
+                        <label style={{display:'block',fontSize: isMobile ? '14px' : '10px',color:'#999',marginBottom:'4px'}}>Timezone</label>
                         <select
                           value={editPostingHours.timezone}
                           onChange={(e) => setEditPostingHours(prev => ({ ...prev, timezone: e.target.value }))}
-                          style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                          style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize: isMobile ? '16px' : '12px',boxSizing:'border-box'}}
                         >
                           {TIMEZONES.map(tz => <option key={tz} value={tz}>{tz}</option>)}
                         </select>
                       </div>
                       <div>
-                        <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Start Hour</label>
+                        <label style={{display:'block',fontSize: isMobile ? '14px' : '10px',color:'#999',marginBottom:'4px'}}>Start Hour</label>
                         <input
                           type="number"
                           min={0}
                           max={23}
                           value={editPostingHours.start_hour}
                           onChange={(e) => setEditPostingHours(prev => ({ ...prev, start_hour: parseInt(e.target.value) || 9 }))}
-                          style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                          style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize: isMobile ? '16px' : '12px',boxSizing:'border-box'}}
                         />
                       </div>
                       <div>
-                        <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>End Hour</label>
+                        <label style={{display:'block',fontSize: isMobile ? '14px' : '10px',color:'#999',marginBottom:'4px'}}>End Hour</label>
                         <input
                           type="number"
                           min={0}
                           max={23}
                           value={editPostingHours.end_hour}
                           onChange={(e) => setEditPostingHours(prev => ({ ...prev, end_hour: parseInt(e.target.value) || 21 }))}
-                          style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize:'12px'}}
+                          style={{width:'100%',padding:'6px 8px',borderRadius:'4px',border:'1px solid #e0e0e0',fontSize: isMobile ? '16px' : '12px',boxSizing:'border-box'}}
                         />
                       </div>
                     </div>
@@ -724,9 +726,9 @@ export default function SettingsPage() {
               </div>
 
               {/* Autopilot */}
-              <div style={{borderTop:'1px solid #e8e8e8',paddingTop:'20px'}}>
+              <div style={{borderTop:'1px solid #e8e8e8',paddingTop: isMobile ? '16px' : '20px'}}>
                 <div style={{display:'flex',alignItems:'center',gap:'12px',marginBottom:'12px'}}>
-                  <label style={{fontSize:'12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999'}}>Autopilot</label>
+                  <label style={{fontSize: isMobile ? '14px' : '12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999'}}>Autopilot</label>
                   <label style={{display:'flex',alignItems:'center',gap:'6px',cursor:'pointer'}}>
                     <input
                       type="checkbox"
@@ -738,10 +740,10 @@ export default function SettingsPage() {
                 </div>
                 {editAutopilot.enabled && (
                   <div style={{padding:'12px',background:'#f8f9fa',borderRadius:'8px'}}>
-                    <p style={{fontSize:'12px',color:'#666',marginBottom:'12px'}}>
+                    <p style={{fontSize: isMobile ? '14px' : '12px',color:'#666',marginBottom:'12px'}}>
                       Automatically approve and post replies that meet these thresholds.
                     </p>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}}>
+                    <div style={{display:'grid',gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',gap:'12px'}}>
                       <div>
                         <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Min Relevance Score (1-10)</label>
                         <input
@@ -779,12 +781,12 @@ export default function SettingsPage() {
               </div>
 
               {/* Tweet Targeting */}
-              <div style={{borderTop:'1px solid #e8e8e8',paddingTop:'20px'}}>
-                <label style={{display:'block',fontSize:'12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'12px'}}>Tweet Targeting</label>
-                <p style={{fontSize:'12px',color:'#666',marginBottom:'12px'}}>
+              <div style={{borderTop:'1px solid #e8e8e8',paddingTop: isMobile ? '16px' : '20px'}}>
+                <label style={{display:'block',fontSize: isMobile ? '14px' : '12px',fontWeight:600,letterSpacing:'0.1em',textTransform:'uppercase',color:'#999',marginBottom:'12px'}}>Tweet Targeting</label>
+                <p style={{fontSize: isMobile ? '14px' : '12px',color:'#666',marginBottom:'12px'}}>
                   Pre-filter tweets before AI scoring to save costs.
                 </p>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'12px'}}>
+                <div style={{display:'grid',gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr 1fr',gap:'12px'}}>
                   <div>
                     <label style={{display:'block',fontSize:'10px',color:'#999',marginBottom:'4px'}}>Max Age (hours)</label>
                     <input
@@ -861,14 +863,14 @@ export default function SettingsPage() {
               <div style={{display:'flex',gap:'8px',justifyContent:'flex-end'}}>
                 <button
                   onClick={resetEditState}
-                  style={{padding:'8px 16px',borderRadius:'8px',background:'#f5f5f5',color:'#666',fontSize:'13px',fontWeight:500,border:'none',cursor:'pointer'}}
+                  style={{padding:'8px 16px',borderRadius:'8px',background:'#f5f5f5',color:'#666',fontSize:'13px',fontWeight:500,border:'none',cursor:'pointer',minHeight:'44px'}}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={saveProductSettings}
                   disabled={saving}
-                  style={{padding:'8px 16px',borderRadius:'8px',background:'#111',color:'#fff',fontSize:'13px',fontWeight:500,border:'none',cursor:'pointer',opacity:saving?0.5:1}}
+                  style={{padding:'8px 16px',borderRadius:'8px',background:'#111',color:'#fff',fontSize:'13px',fontWeight:500,border:'none',cursor:'pointer',opacity:saving?0.5:1,minHeight:'44px'}}
                 >
                   {saving ? 'Saving...' : 'Save Changes'}
                 </button>
@@ -927,14 +929,14 @@ export default function SettingsPage() {
       {/* Danger Zone */}
       <div>
         <h2 style={{fontSize:'16px',fontWeight:600,color:'#e53935',marginBottom:'16px'}}>Danger Zone</h2>
-        <div style={{padding:'20px',background:'#fff',borderRadius:'12px',border:'1px solid #ffcdd2'}}>
+        <div style={{padding: isMobile ? '14px' : '20px',background:'#fff',borderRadius:'12px',border:'1px solid #ffcdd2'}}>
           <div style={{fontSize:'14px',fontWeight:500,color:'#111',marginBottom:'4px'}}>Delete Product</div>
-          <p style={{fontSize:'13px',color:'#666',marginBottom:'12px'}}>
+          <p style={{fontSize: isMobile ? '14px' : '13px',color:'#666',marginBottom:'12px'}}>
             Permanently delete this product and all its data. This action cannot be undone.
           </p>
           <button
             onClick={() => alert('Delete functionality coming soon. Contact support to delete a product.')}
-            style={{padding:'8px 14px',borderRadius:'6px',background:'#fff',border:'1px solid #e53935',color:'#e53935',fontSize:'12px',fontWeight:500,cursor:'pointer'}}
+            style={{padding:'8px 14px',borderRadius:'6px',background:'#fff',border:'1px solid #e53935',color:'#e53935',fontSize:'12px',fontWeight:500,cursor:'pointer',minHeight:'44px'}}
           >
             Delete Product
           </button>

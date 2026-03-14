@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useProducts } from '@/lib/product-context'
 import { PLATFORM_COLORS, API_URL } from '@/lib/constants'
 import { apiFetch } from '@/lib/api'
+import { useIsMobile } from '@/lib/hooks'
 
 const EXTENSION_ID = process.env.NEXT_PUBLIC_EXTENSION_ID || ''
 
@@ -52,6 +53,7 @@ type MediaSuggestion = {
 
 export default function BroadcastPage() {
   const { selectedProduct, selectedProductId, loading: productsLoading } = useProducts()
+  const { isMobile } = useIsMobile()
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([])
   const [loading, setLoading] = useState(true)
   const [extensionConnected, setExtensionConnected] = useState<boolean | null>(null)
@@ -387,8 +389,8 @@ export default function BroadcastPage() {
   }
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 900, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+    <div style={{ padding: isMobile ? '0' : '24px 32px', maxWidth: isMobile ? '100%' : 900, margin: '0 auto' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 12 : 0, marginBottom: 24 }}>
         <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>Broadcast</h1>
         <button
           onClick={() => setShowCreate(true)}
@@ -400,6 +402,7 @@ export default function BroadcastPage() {
             borderRadius: 8,
             cursor: 'pointer',
             fontWeight: 500,
+            minHeight: '44px',
           }}
         >
           + Create Post
@@ -497,7 +500,7 @@ export default function BroadcastPage() {
               )}
 
               {/* Actions */}
-              <div style={{ display: 'flex', gap: 8, marginTop: 12, borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+              <div style={{ display: 'flex', gap: 8, marginTop: 12, borderTop: '1px solid #f0f0f0', paddingTop: 12, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                 {(b.status === 'draft' || b.status === 'scheduled') && (
                   <>
                     <button
@@ -511,6 +514,7 @@ export default function BroadcastPage() {
                         borderRadius: 6,
                         fontSize: 12,
                         cursor: extensionConnected ? 'pointer' : 'not-allowed',
+                        minHeight: '44px',
                       }}
                     >
                       {actionLoading === b.id ? 'Posting...' : 'Post Now'}
@@ -518,7 +522,7 @@ export default function BroadcastPage() {
                     <button
                       onClick={() => handleDelete(b.id)}
                       disabled={actionLoading === b.id}
-                      style={{ padding: '6px 12px', background: '#fff', color: '#c62828', border: '1px solid #c62828', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
+                      style={{ padding: '6px 12px', background: '#fff', color: '#c62828', border: '1px solid #c62828', borderRadius: 6, fontSize: 12, cursor: 'pointer', minHeight: '44px' }}
                     >
                       Delete
                     </button>
@@ -530,14 +534,14 @@ export default function BroadcastPage() {
                       <button
                         onClick={() => handleAmplify(b.id)}
                         disabled={actionLoading === b.id}
-                        style={{ padding: '6px 12px', background: '#e8f5e9', color: '#2e7d32', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
+                        style={{ padding: '6px 12px', background: '#e8f5e9', color: '#2e7d32', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer', minHeight: '44px' }}
                       >
                         {actionLoading === b.id ? 'Starting...' : 'Amplify'}
                       </button>
                     )}
                     <button
                       onClick={() => openRecycleModal(b)}
-                      style={{ padding: '6px 12px', background: '#f3e5f5', color: '#7b1fa2', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
+                      style={{ padding: '6px 12px', background: '#f3e5f5', color: '#7b1fa2', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer', minHeight: '44px' }}
                     >
                       Recycle
                     </button>
@@ -552,7 +556,7 @@ export default function BroadcastPage() {
       {/* Create Modal */}
       {showCreate && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: 500, maxHeight: '90vh', overflow: 'auto' }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: isMobile ? '100%' : 500, maxWidth: '100%', margin: isMobile ? '0 16px' : 'auto', maxHeight: isMobile ? '100vh' : '90vh', overflow: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Create Broadcast</h2>
               <button onClick={() => { setShowCreate(false); resetCreateForm() }} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#999' }}>×</button>
@@ -620,14 +624,14 @@ export default function BroadcastPage() {
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploading}
-                    style={{ padding: '8px 16px', background: '#f5f5f5', border: '1px solid #e0e0e0', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}
+                    style={{ padding: '8px 16px', background: '#f5f5f5', border: '1px solid #e0e0e0', borderRadius: 8, cursor: 'pointer', fontSize: 13, minHeight: '44px' }}
                   >
                     {uploading ? 'Uploading...' : 'Upload Image'}
                   </button>
                   <button
                     onClick={handleSuggestMedia}
                     disabled={suggesting || !createContent.trim()}
-                    style={{ padding: '8px 16px', background: '#e3f2fd', color: '#1565c0', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}
+                    style={{ padding: '8px 16px', background: '#e3f2fd', color: '#1565c0', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, minHeight: '44px' }}
                   >
                     {suggesting ? 'Thinking...' : 'Suggest Media'}
                   </button>
@@ -681,7 +685,7 @@ export default function BroadcastPage() {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button
                 onClick={() => { setShowCreate(false); resetCreateForm() }}
-                style={{ padding: '10px 20px', background: '#f5f5f5', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}
+                style={{ padding: '10px 20px', background: '#f5f5f5', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, minHeight: '44px' }}
               >
                 Cancel
               </button>
@@ -697,6 +701,7 @@ export default function BroadcastPage() {
                   cursor: creating ? 'wait' : 'pointer',
                   fontSize: 14,
                   fontWeight: 500,
+                  minHeight: '44px',
                 }}
               >
                 {creating ? 'Creating...' : createScheduled ? 'Schedule' : 'Post Now'}
@@ -709,7 +714,7 @@ export default function BroadcastPage() {
       {/* Recycle Modal */}
       {showRecycle && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: 450, maxHeight: '90vh', overflow: 'auto' }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: isMobile ? '100%' : 450, maxWidth: '100%', margin: isMobile ? '0 16px' : 'auto', maxHeight: isMobile ? '100vh' : '90vh', overflow: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Save as Reply Template</h2>
               <button onClick={() => setShowRecycle(null)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#999' }}>×</button>
@@ -757,7 +762,7 @@ export default function BroadcastPage() {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setShowRecycle(null)}
-                style={{ padding: '10px 20px', background: '#f5f5f5', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}
+                style={{ padding: '10px 20px', background: '#f5f5f5', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, minHeight: '44px' }}
               >
                 Cancel
               </button>
@@ -773,6 +778,7 @@ export default function BroadcastPage() {
                   cursor: recycling ? 'wait' : 'pointer',
                   fontSize: 14,
                   fontWeight: 500,
+                  minHeight: '44px',
                 }}
               >
                 {recycling ? 'Saving...' : 'Save Template'}

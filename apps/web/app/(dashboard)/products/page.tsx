@@ -3,10 +3,12 @@
 import { useRouter } from 'next/navigation'
 import { useProducts } from '@/lib/product-context'
 import { PLATFORM_COLORS } from '@/lib/constants'
+import { useIsMobile } from '@/lib/hooks'
 
 export default function ProductsPage() {
   const router = useRouter()
   const { products, loading, error, selectProduct, refreshProducts } = useProducts()
+  const { isMobile } = useIsMobile()
 
   function handleSelectProduct(productId: string) {
     selectProduct(productId)
@@ -29,7 +31,7 @@ export default function ProductsPage() {
           <div style={{ fontSize: '13px', color: '#e53935', marginBottom: '12px' }}>{error}</div>
           <button
             onClick={() => refreshProducts()}
-            style={{ padding: '8px 16px', borderRadius: '8px', background: '#c62828', color: '#fff', fontSize: '13px', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+            style={{ padding: '8px 16px', borderRadius: '8px', background: '#c62828', color: '#fff', fontSize: '14px', fontWeight: 600, border: 'none', cursor: 'pointer', minHeight: '44px' }}
           >
             Retry
           </button>
@@ -39,17 +41,17 @@ export default function ProductsPage() {
   }
 
   return (
-    <div style={{ maxWidth: '900px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '32px' }}>
+    <div style={{ maxWidth: isMobile ? '100%' : '900px' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'flex-end', justifyContent: 'space-between', gap: isMobile ? '16px' : undefined, marginBottom: '32px' }}>
         <div>
-          <h1 style={{ fontSize: '28px', fontWeight: 600, color: '#111', lineHeight: 1 }}>Products</h1>
+          <h1 style={{ fontSize: isMobile ? '24px' : '28px', fontWeight: 600, color: '#111', lineHeight: 1 }}>Products</h1>
           <p style={{ fontSize: '14px', color: '#999', marginTop: '6px' }}>
             {products.length} {products.length === 1 ? 'product' : 'products'}
           </p>
         </div>
         <button
           onClick={() => router.push('/onboarding')}
-          style={{ padding: '10px 20px', borderRadius: '10px', background: '#111', color: '#fff', fontSize: '14px', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+          style={{ padding: '10px 20px', borderRadius: '10px', background: '#111', color: '#fff', fontSize: '14px', fontWeight: 600, border: 'none', cursor: 'pointer', minHeight: '44px', width: isMobile ? '100%' : undefined }}
         >
           + Add Product
         </button>
@@ -62,13 +64,13 @@ export default function ProductsPage() {
           <p style={{ fontSize: '14px', color: '#666', marginBottom: '24px' }}>Create your first product to start generating replies</p>
           <button
             onClick={() => router.push('/onboarding')}
-            style={{ padding: '12px 24px', borderRadius: '10px', background: '#111', color: '#fff', fontSize: '14px', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+            style={{ padding: '12px 24px', borderRadius: '10px', background: '#111', color: '#fff', fontSize: '14px', fontWeight: 600, border: 'none', cursor: 'pointer', minHeight: '44px' }}
           >
             Create Product
           </button>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
           {products.map((product) => {
             const platforms = Object.keys(product.keywords || {}).filter(p => (product.keywords[p] || []).length > 0)
             const keywordCount = Object.values(product.keywords || {}).flat().length
@@ -111,7 +113,7 @@ export default function ProductsPage() {
 
                 {/* Description */}
                 {product.description && (
-                  <p style={{ fontSize: '13px', color: '#666', lineHeight: 1.5, marginBottom: '16px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }}>
+                  <p style={{ fontSize: isMobile ? '14px' : '13px', color: '#666', lineHeight: 1.5, marginBottom: '16px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }}>
                     {product.description}
                   </p>
                 )}
@@ -141,11 +143,11 @@ export default function ProductsPage() {
                 <div style={{ display: 'flex', gap: '16px', paddingTop: '12px', borderTop: '1px solid #f0f0f0' }}>
                   <div>
                     <div style={{ fontSize: '20px', fontWeight: 600, color: '#111' }}>{product.pending_count || 0}</div>
-                    <div style={{ fontSize: '11px', color: '#999', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pending</div>
+                    <div style={{ fontSize: isMobile ? '14px' : '11px', color: '#999', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pending</div>
                   </div>
                   <div>
                     <div style={{ fontSize: '20px', fontWeight: 600, color: '#111' }}>{keywordCount}</div>
-                    <div style={{ fontSize: '11px', color: '#999', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Keywords</div>
+                    <div style={{ fontSize: isMobile ? '14px' : '11px', color: '#999', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Keywords</div>
                   </div>
                 </div>
               </div>

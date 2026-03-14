@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useProducts } from '@/lib/product-context'
 import { PLATFORM_COLORS } from '@/lib/constants'
 import { apiFetch } from '@/lib/api'
+import { useIsMobile } from '@/lib/hooks'
 
 type HistoryItem = {
   id: string; platform: string; original_content: string; original_url: string
@@ -20,6 +21,7 @@ const statusStyle: Record<string,{bg:string,color:string}> = {
 
 export default function HistoryPage() {
   const { selectedProduct, selectedProductId, loading: productsLoading } = useProducts()
+  const { isMobile } = useIsMobile()
   const [items, setItems] = useState<HistoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all'|'posted'|'failed'|'rejected'>('all')
@@ -63,18 +65,18 @@ export default function HistoryPage() {
   if (loading) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'200px',color:'#999',fontSize:'14px'}}>Loading history...</div>
 
   return (
-    <div style={{maxWidth:'680px'}}>
-      <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:'32px'}}>
+    <div style={{maxWidth: isMobile ? '100%' : '680px'}}>
+      <div style={{display:'flex',alignItems: isMobile ? 'flex-start' : 'flex-end',justifyContent:'space-between',marginBottom:'32px',flexDirection: isMobile ? 'column' : 'row',gap: isMobile ? '12px' : '0'}}>
         <div>
-          <h1 style={{fontSize:'28px',fontWeight:600,color:'#111',lineHeight:1}}>History</h1>
+          <h1 style={{fontSize: isMobile ? '24px' : '28px',fontWeight:600,color:'#111',lineHeight:1}}>History</h1>
           <p style={{fontSize:'14px',color:'#999',marginTop:'6px'}}>
             {selectedProduct.name} — {filtered.length} {filter === 'all' ? 'total' : filter} items
           </p>
         </div>
-        <div style={{display:'flex',gap:'8px'}}>
+        <div style={{display:'flex',gap:'8px',overflowX: isMobile ? 'auto' : undefined,flexWrap: isMobile ? 'nowrap' : undefined,whiteSpace: isMobile ? 'nowrap' : undefined,maxWidth: isMobile ? '100%' : undefined,WebkitOverflowScrolling: isMobile ? 'touch' as any : undefined}}>
           {(['all','posted','failed','rejected'] as const).map(f => (
             <button key={f} onClick={() => setFilter(f)}
-              style={{fontSize:'13px',color:filter===f?'#fff':'#666',background:filter===f?'#111':'#f5f5f5',border:'none',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500,textTransform:'capitalize'}}>
+              style={{fontSize:'13px',color:filter===f?'#fff':'#666',background:filter===f?'#111':'#f5f5f5',border:'none',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500,textTransform:'capitalize',minHeight: isMobile ? '44px' : undefined,flexShrink:0}}>
               {f}
             </button>
           ))}
@@ -82,7 +84,7 @@ export default function HistoryPage() {
       </div>
 
       {filtered.length === 0 && (
-        <div style={{textAlign:'center',padding:'80px 40px',background:'#fafafa',borderRadius:'16px',border:'1px solid #e8e8e8'}}>
+        <div style={{textAlign:'center',padding: isMobile ? '60px 20px' : '80px 40px',background:'#fafafa',borderRadius:'16px',border:'1px solid #e8e8e8'}}>
           <p style={{fontSize:'15px',fontWeight:500,color:'#111'}}>No {filter === 'all' ? '' : filter + ' '}items yet</p>
         </div>
       )}
@@ -95,11 +97,11 @@ export default function HistoryPage() {
           return (
             <div key={item.id} style={{borderRadius:'16px',border:'1px solid #e8e8e8',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(0,0,0,0.05)'}}>
               {/* Header */}
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'#fafafa',borderBottom:'1px solid #f0f0f0',flexWrap:'wrap',gap:'8px'}}>
-                <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding: isMobile ? '12px 16px' : '12px 20px',background:'#fafafa',borderBottom:'1px solid #f0f0f0',flexWrap:'wrap',gap:'8px'}}>
+                <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
                   <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',color:'#fff',background:PLATFORM_COLORS[item.platform]||'#111',textTransform:'uppercase',letterSpacing:'0.05em'}}>{item.platform}</span>
                   <span style={{fontSize:'11px',fontWeight:600,padding:'3px 10px',borderRadius:'20px',background:style.bg,color:style.color,textTransform:'uppercase'}}>{item.status}</span>
-                  <span style={{fontSize:'13px',color:'#999'}}>@{item.original_author}</span>
+                  <span style={{fontSize: isMobile ? '14px' : '13px',color:'#999'}}>@{item.original_author}</span>
                 </div>
                 <span style={{fontSize:'12px',color:'#999'}}>
                   {item.posted_at ? new Date(item.posted_at).toLocaleString() : new Date(item.created_at).toLocaleString()}
@@ -108,34 +110,34 @@ export default function HistoryPage() {
 
               {/* Error message for failed items */}
               {item.status === 'failed' && item.rejection_reason && (
-                <div style={{padding:'10px 20px',background:'#ffebee',borderBottom:'1px solid #ffcdd2',fontSize:'13px',color:'#c62828'}}>
+                <div style={{padding: isMobile ? '10px 16px' : '10px 20px',background:'#ffebee',borderBottom:'1px solid #ffcdd2',fontSize: isMobile ? '14px' : '13px',color:'#c62828'}}>
                   <strong>Error:</strong> {item.rejection_reason}
                 </div>
               )}
 
               {/* Rejection reason */}
               {item.status === 'rejected' && item.rejection_reason && (
-                <div style={{padding:'10px 20px',background:'#fff3e0',borderBottom:'1px solid #ffe0b2',fontSize:'13px',color:'#e65100'}}>
+                <div style={{padding: isMobile ? '10px 16px' : '10px 20px',background:'#fff3e0',borderBottom:'1px solid #ffe0b2',fontSize: isMobile ? '14px' : '13px',color:'#e65100'}}>
                   <strong>Reason:</strong> {item.rejection_reason}
                 </div>
               )}
 
               {/* Original Post */}
-              <div style={{padding:'16px 20px',borderBottom:'1px solid #f5f5f5'}}>
+              <div style={{padding: isMobile ? '16px 16px' : '16px 20px',borderBottom:'1px solid #f5f5f5'}}>
                 <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'8px'}}>Original Post</div>
                 <p style={{fontSize:'14px',color:'#111',lineHeight:1.6}}>{item.original_content}</p>
-                {item.original_url && <a href={item.original_url} target="_blank" rel="noopener noreferrer" style={{fontSize:'13px',color:'#999',marginTop:'6px',display:'inline-block'}}>View original &rarr;</a>}
+                {item.original_url && <a href={item.original_url} target="_blank" rel="noopener noreferrer" style={{fontSize: isMobile ? '14px' : '13px',color:'#999',marginTop:'6px',display:'inline-block'}}>View original &rarr;</a>}
               </div>
 
               {/* Reply */}
-              <div style={{padding:'16px 20px'}}>
+              <div style={{padding: isMobile ? '16px 16px' : '16px 20px'}}>
                 <div style={{fontSize:'11px',fontWeight:600,letterSpacing:'0.12em',textTransform:'uppercase',color:'#bbb',marginBottom:'8px'}}>
                   {item.status === 'posted' ? 'Posted Reply' : 'Draft Reply'}
                 </div>
                 <p style={{fontSize:'14px',color:'#111',lineHeight:1.6}}>{item.edited_reply || item.draft_reply}</p>
                 {postedTweetId && (
                   <a href={`https://twitter.com/i/web/status/${postedTweetId}`} target="_blank" rel="noopener noreferrer"
-                    style={{fontSize:'13px',color:'#1da1f2',marginTop:'8px',display:'inline-block'}}>
+                    style={{fontSize: isMobile ? '14px' : '13px',color:'#1da1f2',marginTop:'8px',display:'inline-block',minHeight: isMobile ? '44px' : undefined}}>
                     View on Twitter &rarr;
                   </a>
                 )}
