@@ -2,7 +2,7 @@
 // Handles Twitter posting via GraphQL from the browser context
 
 const TWITTER_BEARER = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
-const GRAPHQL_QUERY_ID = "ZumXEfvjHvt55CBVLR_DBA";
+const GRAPHQL_QUERY_ID = "7TKRKCPuAGsmYde0CudbVg";
 const GRAPHQL_CREATE_TWEET_URL = `https://x.com/i/api/graphql/${GRAPHQL_QUERY_ID}/CreateTweet`;
 
 async function getTwitterCookies() {
