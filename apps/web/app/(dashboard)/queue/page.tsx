@@ -46,7 +46,7 @@ function getTweetAge(item: QueueItem): number {
   if (tweetId && tweetId.length > 15) {
     try {
       // Twitter snowflake: (id >> 22) + 1288834974657
-      const timestamp = (BigInt(tweetId) >> 22n) + 1288834974657n
+      const timestamp = (BigInt(tweetId) >> BigInt(22)) + BigInt(1288834974657)
       const tweetDate = new Date(Number(timestamp))
       return (Date.now() - tweetDate.getTime()) / (1000 * 60 * 60) // hours
     } catch { }
