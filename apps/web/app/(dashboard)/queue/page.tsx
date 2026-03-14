@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useProducts } from '@/lib/product-context'
 import { PLATFORM_COLORS, MODE_COLORS, API_URL } from '@/lib/constants'
 import { apiFetch } from '@/lib/api'
@@ -7,6 +7,9 @@ import Link from 'next/link'
 
 // Extension ID - set via NEXT_PUBLIC_EXTENSION_ID env var after loading extension in Chrome
 const EXTENSION_ID = process.env.NEXT_PUBLIC_EXTENSION_ID || ''
+
+// Stale threshold: 48 hours
+const STALE_HOURS = 48
 
 type QueueItem = {
   id: string; platform: string; original_content: string; original_url: string
@@ -16,6 +19,7 @@ type QueueItem = {
   relevance_reason: string | null
   original_language: string | null
   translated_content: string | null
+  created_at?: string
 }
 
 type ItemStatus = {
@@ -24,10 +28,49 @@ type ItemStatus = {
   tweetId?: string
 }
 
+type PostResult = {
+  successCount: number
+  skippedCount: number
+  lastError?: string
+}
+
 function getMetaField(item: QueueItem, field: string): string {
-  // Try dedicated column first, then engagement_metrics JSONB
   if ((item as any)[field]) return (item as any)[field]
   return item.engagement_metrics?.[field] || ''
+}
+
+function getTweetAge(item: QueueItem): number {
+  // Try to extract tweet timestamp from URL or use created_at
+  // Twitter snowflake IDs contain timestamp
+  const tweetId = extractTweetId(item.original_url)
+  if (tweetId && tweetId.length > 15) {
+    try {
+      // Twitter snowflake: (id >> 22) + 1288834974657
+      const timestamp = (BigInt(tweetId) >> 22n) + 1288834974657n
+      const tweetDate = new Date(Number(timestamp))
+      return (Date.now() - tweetDate.getTime()) / (1000 * 60 * 60) // hours
+    } catch { }
+  }
+  // Fallback to queue item creation time
+  if (item.created_at) {
+    return (Date.now() - new Date(item.created_at).getTime()) / (1000 * 60 * 60)
+  }
+  return 0
+}
+
+function isStale(item: QueueItem): boolean {
+  return getTweetAge(item) > STALE_HOURS
+}
+
+function extractTweetId(url: string): string {
+  if (!url) return ''
+  const parts = url.split('/')
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i] === 'status' && i + 1 < parts.length) {
+      return parts[i + 1].split('?')[0]
+    }
+  }
+  return ''
 }
 
 export default function QueuePage() {
@@ -43,13 +86,15 @@ export default function QueuePage() {
   const [extensionConnected, setExtensionConnected] = useState<boolean | null>(null)
   const [cleaning, setCleaning] = useState(false)
   const [itemStatuses, setItemStatuses] = useState<Record<string, ItemStatus>>({})
+  const [postingStatus, setPostingStatus] = useState<string | null>(null)
+  const [autoPosting, setAutoPosting] = useState(false)
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const abortAutoPostRef = useRef(false)
 
   useEffect(() => {
     if (selectedProductId) {
       fetchQueue()
     }
-    // Start polling for extension every 3 seconds until connected
     checkExtensionWithPolling()
     return () => {
       if (pollIntervalRef.current) {
@@ -83,7 +128,6 @@ export default function QueuePage() {
     setExtensionConnected(connected)
 
     if (!connected) {
-      // Poll every 3 seconds until connected
       pollIntervalRef.current = setInterval(async () => {
         const isConnected = await checkExtension()
         if (isConnected) {
@@ -102,7 +146,8 @@ export default function QueuePage() {
     setLoading(true)
     try {
       const data = await apiFetch<QueueItem[]>(`/queue/pending?product_id=${selectedProductId}`)
-      setItems(Array.isArray(data) ? data : [])
+      const allItems = Array.isArray(data) ? data : []
+      setItems(allItems)
       setRankNotes({})
       setItemStatuses({})
     } catch (e) {
@@ -143,28 +188,18 @@ export default function QueuePage() {
     setRanking(false)
   }
 
-  async function cleanupErrors() {
+  // Enhanced cleanup: errors + stale tweets
+  async function cleanupErrorsAndStale() {
     if (!selectedProductId) return
     setCleaning(true)
     try {
-      const data = await apiFetch<{items_moved_to_failed: number}>(`/queue/cleanup-errors?product_id=${selectedProductId}`, { method: 'POST' })
-      if (data.items_moved_to_failed > 0) {
-        // Refresh queue to remove cleaned items
+      const data = await apiFetch<{items_moved_to_failed: number, stale_cleaned: number}>(`/queue/cleanup-errors?product_id=${selectedProductId}&include_stale=true`, { method: 'POST' })
+      const total = (data.items_moved_to_failed || 0) + (data.stale_cleaned || 0)
+      if (total > 0) {
         await fetchQueue()
       }
     } catch (e) { console.error('Cleanup error:', e) }
     setCleaning(false)
-  }
-
-  function extractTweetId(url: string): string {
-    if (!url) return ''
-    const parts = url.split('/')
-    for (let i = 0; i < parts.length; i++) {
-      if (parts[i] === 'status' && i + 1 < parts.length) {
-        return parts[i + 1].split('?')[0]
-      }
-    }
-    return ''
   }
 
   async function postViaExtension(tweetId: string, replyText: string): Promise<{success: boolean; tweet_id?: string; error?: string}> {
@@ -183,30 +218,52 @@ export default function QueuePage() {
     })
   }
 
-  async function approve(item: QueueItem) {
-    // Extension required - no server-side fallback
-    if (!extensionConnected) {
-      return
+  // Mark item as failed and remove from local state
+  async function markFailedAndRemove(item: QueueItem, reason: string) {
+    try {
+      await apiFetch(`/queue/${item.id}/mark-failed?product_id=${selectedProductId}`, {
+        method: 'POST',
+        body: JSON.stringify({ error: reason })
+      })
+    } catch (e) {
+      console.warn('Failed to mark item as failed:', e)
     }
+    // Remove from local state immediately
+    setItems(prev => prev.filter(i => i.id !== item.id))
+  }
 
-    setActionLoading(item.id)
-    // Clear any previous status
-    setItemStatuses(prev => {
-      const next = { ...prev }
-      delete next[item.id]
-      return next
-    })
+  // Check if error indicates tweet can't be replied to
+  function isUnreplyableError(error: string): boolean {
+    const unreplyablePatterns = [
+      'tweet_results',
+      'empty',
+      'does not allow',
+      'restricted',
+      'protected',
+      'not found',
+      'deleted',
+      'unavailable',
+      'cannot reply',
+      'reply restricted'
+    ]
+    const lowerError = error.toLowerCase()
+    return unreplyablePatterns.some(p => lowerError.includes(p))
+  }
 
+  // Single item approval with auto-cleanup on failure
+  async function approveSingle(item: QueueItem): Promise<{success: boolean; skipped: boolean}> {
     const replyText = item.edited_reply || item.draft_reply
     const tweetId = extractTweetId(item.original_url)
 
     if (!tweetId) {
-      setItemStatuses(prev => ({
-        ...prev,
-        [item.id]: { type: 'error', message: 'Could not extract tweet ID from URL' }
-      }))
-      setActionLoading(null)
-      return
+      await markFailedAndRemove(item, 'Could not extract tweet ID')
+      return { success: false, skipped: true }
+    }
+
+    // Check if stale
+    if (isStale(item)) {
+      await markFailedAndRemove(item, 'Tweet is stale (>48h old)')
+      return { success: false, skipped: true }
     }
 
     const result = await postViaExtension(tweetId, replyText)
@@ -218,39 +275,110 @@ export default function QueuePage() {
           method: 'POST',
           body: JSON.stringify({ posted_tweet_id: result.tweet_id })
         })
-      } catch (e: any) {
-        // Tweet was posted but DB update failed - still show success but log warning
+      } catch (e) {
         console.warn('mark-posted failed but tweet was posted:', e)
       }
+      // Remove from local state
+      setItems(prev => prev.filter(i => i.id !== item.id))
+      return { success: true, skipped: false }
+    } else {
+      // Check if it's an unreplyable tweet error
+      const errorMsg = result.error || 'Unknown error'
+      if (isUnreplyableError(errorMsg)) {
+        // Silently mark as failed and remove
+        await markFailedAndRemove(item, `Tweet does not allow replies: ${errorMsg}`)
+        return { success: false, skipped: true }
+      }
+      // Other errors - still fail but don't auto-skip
+      return { success: false, skipped: false }
+    }
+  }
 
-      // Show success message on card
+  // Approve with auto-advance on failure
+  async function approve(item: QueueItem) {
+    if (!extensionConnected) return
+
+    setActionLoading(item.id)
+    setItemStatuses(prev => {
+      const next = { ...prev }
+      delete next[item.id]
+      return next
+    })
+
+    const result = await approveSingle(item)
+
+    if (result.success) {
       setItemStatuses(prev => ({
         ...prev,
-        [item.id]: {
-          type: 'success',
-          message: 'Posted successfully!',
-          tweetId: result.tweet_id
-        }
+        [item.id]: { type: 'success', message: 'Posted successfully!' }
       }))
       setActionLoading(null)
-
-      // Remove from queue after 3 seconds
+      // Brief delay to show success
       setTimeout(() => {
-        setItems(prev => prev.filter(i => i.id !== item.id))
         setItemStatuses(prev => {
           const next = { ...prev }
           delete next[item.id]
           return next
         })
-      }, 3000)
+      }, 2000)
+    } else if (result.skipped) {
+      // Silently skipped - try next item automatically
+      setActionLoading(null)
+      const remainingItems = items.filter(i => i.id !== item.id)
+      if (remainingItems.length > 0) {
+        // Auto-advance to next item
+        setPostingStatus('Skipped restricted tweet, trying next...')
+        setTimeout(() => {
+          approveWithAutoAdvance(remainingItems[0], 1)
+        }, 500)
+      } else {
+        setPostingStatus('No more items in queue')
+        setTimeout(() => setPostingStatus(null), 3000)
+      }
     } else {
-      // Show error on card but keep item in queue
+      // Real error - show to user
       setItemStatuses(prev => ({
         ...prev,
-        [item.id]: { type: 'error', message: result.error || 'Unknown error' }
+        [item.id]: { type: 'error', message: 'Failed to post. Try again or skip.' }
       }))
       setActionLoading(null)
-      // Do NOT remove from queue - user can try again or skip
+    }
+  }
+
+  // Auto-advance through queue on failures
+  async function approveWithAutoAdvance(item: QueueItem, skippedSoFar: number) {
+    if (!extensionConnected || skippedSoFar >= 3) {
+      setPostingStatus(`Skipped ${skippedSoFar} restricted tweets - try again later`)
+      setTimeout(() => setPostingStatus(null), 4000)
+      return
+    }
+
+    setActionLoading(item.id)
+    const result = await approveSingle(item)
+
+    if (result.success) {
+      const msg = skippedSoFar > 0
+        ? `Skipped ${skippedSoFar} restricted tweet${skippedSoFar > 1 ? 's' : ''}, posted successfully!`
+        : 'Posted successfully!'
+      setPostingStatus(msg)
+      setActionLoading(null)
+      setTimeout(() => setPostingStatus(null), 3000)
+    } else if (result.skipped) {
+      setActionLoading(null)
+      const remainingItems = items.filter(i => i.id !== item.id)
+      if (remainingItems.length > 0 && skippedSoFar < 2) {
+        setPostingStatus(`Skipped ${skippedSoFar + 1} restricted tweet${skippedSoFar > 0 ? 's' : ''}, trying next...`)
+        setTimeout(() => {
+          approveWithAutoAdvance(remainingItems[0], skippedSoFar + 1)
+        }, 500)
+      } else {
+        setPostingStatus(`Skipped ${skippedSoFar + 1} restricted tweets - try again later`)
+        setTimeout(() => setPostingStatus(null), 4000)
+      }
+    } else {
+      setActionLoading(null)
+      setPostingStatus(`Skipped ${skippedSoFar} tweets, last one failed`)
+      setTimeout(() => setPostingStatus(null), 4000)
     }
   }
 
@@ -267,7 +395,6 @@ export default function QueuePage() {
   }
 
   async function skip(id: string) {
-    // Clear any error status and move item to bottom
     setItemStatuses(prev => {
       const next = { ...prev }
       delete next[id]
@@ -292,6 +419,9 @@ export default function QueuePage() {
     }
     setActionLoading(null)
   }
+
+  // Count stale items
+  const staleCount = items.filter(isStale).length
 
   if (productsLoading) {
     return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'200px',color:'#999',fontSize:'14px'}}>Loading...</div>
@@ -345,6 +475,14 @@ export default function QueuePage() {
           <span style={{fontSize:'13px',fontWeight:500,color:'#2e7d32'}}>Extension connected - replies will post from your browser</span>
         </div>
       )}
+
+      {/* Posting Status Banner */}
+      {postingStatus && (
+        <div style={{padding:'10px 16px',marginBottom:'16px',background:'#e3f2fd',border:'1px solid #bbdefb',borderRadius:'10px',display:'flex',alignItems:'center',gap:'8px'}}>
+          <span style={{fontSize:'13px',fontWeight:500,color:'#1565c0'}}>{postingStatus}</span>
+        </div>
+      )}
+
       {rankError && (
         <div style={{padding:'12px 16px',marginBottom:'16px',background:'#ffebee',border:'1px solid #ffcdd2',borderRadius:'10px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
           <span style={{fontSize:'13px',color:'#c62828'}}>Smart Rank failed: {rankError}</span>
@@ -357,6 +495,7 @@ export default function QueuePage() {
           <h1 style={{fontSize:'28px',fontWeight:600,color:'#111',lineHeight:1}}>Reply Queue</h1>
           <p style={{fontSize:'14px',color:'#999',marginTop:'6px'}}>
             {selectedProduct.name} — {items.length} pending {items.length===1?'reply':'replies'}
+            {staleCount > 0 && <span style={{color:'#f57c00'}}> ({staleCount} stale)</span>}
           </p>
         </div>
         <div style={{display:'flex',gap:'8px'}}>
@@ -364,9 +503,9 @@ export default function QueuePage() {
             style={{fontSize:'13px',color:'#111',background:'#fff',border:'1px solid #e0e0e0',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:600,opacity:ranking?0.5:1}}>
             {ranking ? 'Ranking...' : 'Smart Rank'}
           </button>
-          <button onClick={cleanupErrors} disabled={cleaning || items.length === 0}
+          <button onClick={cleanupErrorsAndStale} disabled={cleaning || items.length === 0}
             style={{fontSize:'13px',color:'#c62828',background:'#fff',border:'1px solid #ffcdd2',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500,opacity:cleaning?0.5:1}}>
-            {cleaning ? 'Cleaning...' : 'Clean Errors'}
+            {cleaning ? 'Cleaning...' : `Clean${staleCount > 0 ? ` (${staleCount} stale)` : ''}`}
           </button>
           <button onClick={fetchQueue} style={{fontSize:'13px',color:'#666',background:'#f5f5f5',border:'none',borderRadius:'8px',padding:'8px 14px',cursor:'pointer',fontWeight:500}}>Refresh</button>
         </div>
@@ -390,13 +529,20 @@ export default function QueuePage() {
           const modeStyle = MODE_COLORS[replyMode] || { bg: '#f0f0f0', color: '#555' }
           const rankNote = rankNotes[item.id]
           const itemStatus = itemStatuses[item.id]
+          const stale = isStale(item)
+          const ageHours = Math.round(getTweetAge(item))
 
           return (
-          <div key={item.id} style={{borderRadius:'16px',border:'1px solid #e8e8e8',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(0,0,0,0.05)'}}>
+          <div key={item.id} style={{borderRadius:'16px',border: stale ? '2px solid #ff9800' : '1px solid #e8e8e8',overflow:'hidden',background:'#fff',boxShadow:'0 2px 12px rgba(0,0,0,0.05)',opacity: stale ? 0.8 : 1}}>
             {/* Header */}
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'#fafafa',borderBottom:'1px solid #f0f0f0',flexWrap:'wrap',gap:'8px'}}>
               <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
                 <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',color:'#fff',background:PLATFORM_COLORS[item.platform]||'#111',textTransform:'uppercase',letterSpacing:'0.05em'}}>{item.platform}</span>
+                {stale && (
+                  <span style={{fontSize:'10px',fontWeight:600,padding:'3px 8px',borderRadius:'20px',background:'#fff3e0',color:'#e65100',textTransform:'uppercase',letterSpacing:'0.04em'}}>
+                    Stale ({ageHours}h)
+                  </span>
+                )}
                 {replyMode && (
                   <span style={{fontSize:'10px',fontWeight:600,padding:'3px 8px',borderRadius:'20px',background:modeStyle.bg,color:modeStyle.color,textTransform:'uppercase',letterSpacing:'0.04em'}}>
                     {replyMode.replace('_', ' ')}
@@ -489,12 +635,12 @@ export default function QueuePage() {
                 <button
                   onClick={()=>approve(item)}
                   disabled={actionLoading===item.id || !extensionConnected}
-                  title={!extensionConnected ? 'Connect Chrome extension to post' : ''}
+                  title={!extensionConnected ? 'Connect Chrome extension to post' : stale ? 'This tweet is stale but you can still try' : ''}
                   style={{
                     flex:1,
                     padding:'10px',
                     borderRadius:'10px',
-                    background: extensionConnected ? '#111' : '#ccc',
+                    background: extensionConnected ? (stale ? '#ff9800' : '#111') : '#ccc',
                     color:'#fff',
                     fontSize:'13px',
                     fontWeight:600,
@@ -502,7 +648,7 @@ export default function QueuePage() {
                     cursor: extensionConnected ? 'pointer' : 'not-allowed',
                     opacity:actionLoading===item.id?0.5:1
                   }}>
-                  {actionLoading===item.id ? 'Posting...' : 'Approve & Post'}
+                  {actionLoading===item.id ? 'Posting...' : (stale ? 'Try Anyway' : 'Approve & Post')}
                 </button>
                 <button onClick={()=>{setEditingId(item.id);setEditText(item.edited_reply||item.draft_reply)}}
                   style={{padding:'10px 18px',borderRadius:'10px',background:'#fff',color:'#111',fontSize:'13px',fontWeight:500,border:'1px solid #e0e0e0',cursor:'pointer'}}>

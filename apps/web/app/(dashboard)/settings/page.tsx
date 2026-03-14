@@ -4,6 +4,10 @@ import { useProducts, Product } from '@/lib/product-context'
 import { apiFetch } from '@/lib/api'
 import { createClient } from '@/lib/supabase-client'
 import { PLATFORM_COLORS } from '@/lib/constants'
+import Link from 'next/link'
+
+// Extension ID - set via env var
+const EXTENSION_ID = process.env.NEXT_PUBLIC_EXTENSION_ID || ''
 
 type TwitterStatus = {
   connected: boolean
@@ -108,7 +112,38 @@ export default function SettingsPage() {
   const [editWebsiteUrl, setEditWebsiteUrl] = useState('')
   const [editTwitterHandle, setEditTwitterHandle] = useState('')
 
+  // Extension detection
+  const [extensionInstalled, setExtensionInstalled] = useState<boolean | null>(null)
+
   const supabase = createClient()
+
+  // Check for extension on mount
+  useEffect(() => {
+    checkExtension()
+  }, [])
+
+  async function checkExtension(): Promise<boolean> {
+    if (!EXTENSION_ID || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+      setExtensionInstalled(false)
+      return false
+    }
+    try {
+      const response = await new Promise<{success: boolean}>((resolve) => {
+        chrome.runtime.sendMessage(EXTENSION_ID, { action: 'ping' }, (resp) => {
+          if (chrome.runtime.lastError || !resp) {
+            resolve({ success: false })
+          } else {
+            resolve(resp)
+          }
+        })
+      })
+      setExtensionInstalled(response.success)
+      return response.success
+    } catch {
+      setExtensionInstalled(false)
+      return false
+    }
+  }
 
   useEffect(() => {
     async function init() {
@@ -318,7 +353,65 @@ export default function SettingsPage() {
                 </div>
               )}
             </>
+          ) : extensionInstalled === false ? (
+            // Extension not installed
+            <>
+              <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px'}}>
+                <div style={{width:'8px',height:'8px',borderRadius:'50%',background:'#f59e0b'}}/>
+                <span style={{fontSize:'14px',fontWeight:500,color:'#111'}}>Extension not detected</span>
+              </div>
+              <div style={{padding:'16px',background:'#fffbeb',borderRadius:'8px',border:'1px solid #fef3c7',marginBottom:'12px'}}>
+                <div style={{fontSize:'13px',fontWeight:600,color:'#92400e',marginBottom:'8px'}}>Install the Chrome Extension</div>
+                <p style={{fontSize:'13px',color:'#b45309',lineHeight:1.6,margin:'0 0 12px 0'}}>
+                  The Operative1 Chrome Extension is required to post replies. It posts directly from your browser so every interaction comes from your authentic account.
+                </p>
+                <Link
+                  href="/extension"
+                  target="_blank"
+                  style={{
+                    display:'inline-flex',alignItems:'center',gap:'8px',
+                    padding:'10px 16px',background:'#111',color:'#fff',
+                    borderRadius:'6px',fontSize:'13px',fontWeight:600,
+                    textDecoration:'none'
+                  }}
+                >
+                  Install Extension
+                </Link>
+                <button
+                  onClick={() => checkExtension()}
+                  style={{marginLeft:'8px',padding:'10px 16px',background:'#fff',color:'#666',border:'1px solid #e0e0e0',borderRadius:'6px',fontSize:'13px',fontWeight:500,cursor:'pointer'}}
+                >
+                  Check Again
+                </button>
+              </div>
+            </>
+          ) : extensionInstalled === true ? (
+            // Extension installed but not connected to this product
+            <>
+              <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px'}}>
+                <div style={{width:'8px',height:'8px',borderRadius:'50%',background:'#3b82f6'}}/>
+                <span style={{fontSize:'14px',fontWeight:500,color:'#111'}}>Extension ready</span>
+              </div>
+              <div style={{padding:'16px',background:'#eff6ff',borderRadius:'8px',border:'1px solid #dbeafe',marginBottom:'12px'}}>
+                <div style={{fontSize:'13px',fontWeight:600,color:'#1e40af',marginBottom:'8px'}}>Connect via Extension</div>
+                <p style={{fontSize:'13px',color:'#1d4ed8',lineHeight:1.6,margin:'0 0 12px 0'}}>
+                  Click the Operative1 extension icon in your browser toolbar, select this product, and click Connect.
+                </p>
+                <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+                  <div style={{fontSize:'12px',color:'#666',display:'flex',alignItems:'center',gap:'6px'}}>
+                    <span style={{color:'#22c55e'}}>✓</span> Posts from YOUR browser using YOUR session
+                  </div>
+                  <div style={{fontSize:'12px',color:'#666',display:'flex',alignItems:'center',gap:'6px'}}>
+                    <span style={{color:'#22c55e'}}>✓</span> Your credentials never leave your browser
+                  </div>
+                </div>
+              </div>
+              <div style={{fontSize:'12px',color:'#999'}}>
+                Product ID: <code style={{background:'#f0f0f0',padding:'2px 6px',borderRadius:'4px',fontFamily:'monospace'}}>{selectedProductId}</code>
+              </div>
+            </>
           ) : (
+            // Still checking
             <>
               <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px'}}>
                 <div style={{width:'8px',height:'8px',borderRadius:'50%',background:'#999'}}/>

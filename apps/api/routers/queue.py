@@ -144,22 +144,28 @@ async def clear_seen(
 @router.post("/cleanup-errors")
 async def cleanup_errors(
     product_id: str,
+    include_stale: bool = False,
     user_id: str = Depends(get_current_user)
 ):
     """
     Mark pending items with errors (like 226 automation detection) as failed.
+    Optionally also clean stale tweets (>48h old).
 
     Items that already have error messages in rejection_reason should not
     remain in pending status - they belong in the failed category.
     """
     from services.database import supabase
+    from datetime import datetime, timedelta
 
     await verify_product_ownership(user_id, product_id)
 
-    # Find pending items that have error indicators
-    res = supabase.table('reply_queue').select('id,rejection_reason,engagement_metrics').eq('product_id', product_id).eq('status', 'pending').execute()
+    # Find pending items
+    res = supabase.table('reply_queue').select('id,rejection_reason,engagement_metrics,original_url,created_at').eq('product_id', product_id).eq('status', 'pending').execute()
 
     cleanup_count = 0
+    stale_count = 0
+    stale_threshold = datetime.utcnow() - timedelta(hours=48)
+
     for item in res.data or []:
         reason = item.get('rejection_reason') or ''
         metrics = item.get('engagement_metrics') or {}
@@ -181,8 +187,40 @@ async def cleanup_errors(
             }).eq('id', item['id']).execute()
             cleanup_count += 1
             logger.info(f"Cleaned up item {item['id']}: {reason or error_msg}")
+            continue
 
-    return {"status": "cleaned", "items_moved_to_failed": cleanup_count}
+        # Check if stale (>48h old)
+        if include_stale:
+            is_stale = False
+            # Try to extract tweet timestamp from URL (Twitter snowflake ID)
+            url = item.get('original_url') or ''
+            if '/status/' in url:
+                try:
+                    tweet_id = url.split('/status/')[-1].split('?')[0].split('/')[0]
+                    if tweet_id.isdigit() and len(tweet_id) > 15:
+                        timestamp_ms = (int(tweet_id) >> 22) + 1288834974657
+                        tweet_date = datetime.utcfromtimestamp(timestamp_ms / 1000)
+                        is_stale = tweet_date < stale_threshold
+                except Exception:
+                    pass
+
+            # Fallback: check created_at
+            if not is_stale and item.get('created_at'):
+                try:
+                    created = datetime.fromisoformat(item['created_at'].replace('Z', '+00:00'))
+                    is_stale = created.replace(tzinfo=None) < stale_threshold
+                except Exception:
+                    pass
+
+            if is_stale:
+                supabase.table('reply_queue').update({
+                    'status': 'failed',
+                    'rejection_reason': 'Auto-cleaned: tweet is stale (>48h old)'
+                }).eq('id', item['id']).execute()
+                stale_count += 1
+                logger.info(f"Cleaned stale item {item['id']}")
+
+    return {"status": "cleaned", "items_moved_to_failed": cleanup_count, "stale_cleaned": stale_count}
 
 
 @router.post("/test-twitter-pipeline")
