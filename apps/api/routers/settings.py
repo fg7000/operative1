@@ -66,6 +66,40 @@ async def get_twitter_status(
     }
 
 
+@router.get("/twitter-cookies")
+async def get_twitter_cookies(
+    product_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Decrypt and return stored Twitter credentials for a product.
+
+    Used by the dashboard to pass stored cookies to the Chrome extension
+    so it posts from the correct account (not whichever is logged in).
+    """
+    from services.database import supabase
+
+    if not product_id:
+        raise HTTPException(status_code=400, detail="product_id is required")
+
+    await verify_product_ownership(user_id, product_id)
+
+    res = supabase.table('social_accounts').select('credentials_encrypted').eq('product_id', product_id).eq('platform', 'twitter').execute()
+
+    if not res.data:
+        return {"error": "not connected"}
+
+    credentials = decrypt_credentials(res.data[0].get('credentials_encrypted', ''))
+
+    if not credentials:
+        return {"error": "credentials_corrupted"}
+
+    return {
+        "auth_token": credentials["auth_token"],
+        "ct0": credentials["ct0"],
+    }
+
+
 @router.post("/twitter-cookies")
 async def save_twitter_cookies(body: SaveTwitterCookiesRequest):
     """

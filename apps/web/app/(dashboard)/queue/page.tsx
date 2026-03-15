@@ -230,12 +230,25 @@ export default function QueuePage() {
     setCleaning(false)
   }
 
+  async function fetchStoredCookies(): Promise<{auth_token: string; ct0: string} | null> {
+    if (!selectedProductId) return null
+    try {
+      const data = await apiFetch<{auth_token?: string; ct0?: string; error?: string}>(`/settings/twitter-cookies?product_id=${selectedProductId}`)
+      if (data.auth_token && data.ct0) return { auth_token: data.auth_token, ct0: data.ct0 }
+      return null
+    } catch {
+      return null
+    }
+  }
+
   async function postViaExtension(tweetId: string, replyText: string): Promise<{success: boolean; tweet_id?: string; error?: string}> {
+    const stored = await fetchStoredCookies()
     return new Promise((resolve) => {
       chrome.runtime.sendMessage(EXTENSION_ID, {
         action: 'post_reply',
         tweet_id: tweetId,
-        reply_text: replyText
+        reply_text: replyText,
+        ...(stored ? { auth_token: stored.auth_token, ct0: stored.ct0 } : {})
       }, (response) => {
         if (chrome.runtime.lastError || !response) {
           resolve({ success: false, error: 'Extension not responding. Try refreshing the page.' })

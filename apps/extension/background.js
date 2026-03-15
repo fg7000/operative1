@@ -80,13 +80,14 @@ function buildTweetPayload(text, replyToTweetId, mediaIds = []) {
   };
 }
 
-async function postTweet(text, replyToTweetId, mediaIds = []) {
+async function postTweet(text, replyToTweetId, mediaIds = [], passedCookies = null) {
   console.log('[Operative1] postTweet called');
   console.log('[Operative1] Reply to tweet ID:', replyToTweetId);
   console.log('[Operative1] Tweet text:', text);
   console.log('[Operative1] Media IDs:', mediaIds);
+  console.log('[Operative1] Using passed cookies:', passedCookies ? 'yes' : 'no (falling back to browser)');
 
-  const cookies = await getTwitterCookies();
+  const cookies = passedCookies || await getTwitterCookies();
   console.log('[Operative1] Cookies retrieved:', cookies ? 'yes' : 'no');
 
   if (!cookies) {
@@ -280,14 +281,14 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
   console.log('[Operative1] Received message:', action, 'from:', sender.origin);
 
   if (action === 'ping') {
-    console.log('[Operative1] Ping received, responding with version 1.4.0');
-    sendResponse({ success: true, version: '1.4.0' });
+    console.log('[Operative1] Ping received, responding with version 1.5.0');
+    sendResponse({ success: true, version: '1.5.0' });
     return true;
   }
 
   if (action === 'post_reply') {
-    const { tweet_id, reply_text } = request;
-    console.log('[Operative1] post_reply request:', { tweet_id, reply_text: reply_text?.slice(0, 50) + '...' });
+    const { tweet_id, reply_text, auth_token, ct0 } = request;
+    console.log('[Operative1] post_reply request:', { tweet_id, reply_text: reply_text?.slice(0, 50) + '...', has_stored_cookies: !!(auth_token && ct0) });
 
     if (!tweet_id || !reply_text) {
       console.log('[Operative1] ERROR: Missing tweet_id or reply_text');
@@ -295,7 +296,10 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
       return true;
     }
 
-    postTweet(reply_text, tweet_id)
+    // Use passed cookies (from stored DB credentials) if available, otherwise fall back to browser cookies
+    const passedCookies = (auth_token && ct0) ? { auth_token, ct0 } : null;
+
+    postTweet(reply_text, tweet_id, [], passedCookies)
       .then(result => {
         console.log('[Operative1] postTweet result:', JSON.stringify(result));
         sendResponse(result);
@@ -310,8 +314,8 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
 
   // NEW: Handle broadcast posts (standalone tweets, optionally with media)
   if (action === 'post_broadcast') {
-    const { content, media_url } = request;
-    console.log('[Operative1] post_broadcast request:', { content: content?.slice(0, 50) + '...', media_url: media_url ? 'yes' : 'no' });
+    const { content, media_url, auth_token, ct0 } = request;
+    console.log('[Operative1] post_broadcast request:', { content: content?.slice(0, 50) + '...', media_url: media_url ? 'yes' : 'no', has_stored_cookies: !!(auth_token && ct0) });
 
     if (!content) {
       console.log('[Operative1] ERROR: Missing content');
@@ -321,7 +325,8 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
 
     (async () => {
       try {
-        const cookies = await getTwitterCookies();
+        // Use passed cookies (from stored DB credentials) if available, otherwise fall back to browser cookies
+        const cookies = (auth_token && ct0) ? { auth_token, ct0 } : await getTwitterCookies();
         if (!cookies) {
           sendResponse({ success: false, error: 'Not logged into Twitter. Please log in at x.com first.' });
           return;
@@ -348,7 +353,8 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
         }
 
         // Post the tweet (no replyToTweetId for broadcasts)
-        const result = await postTweet(content, null, mediaIds);
+        const passedCookies = (auth_token && ct0) ? { auth_token, ct0 } : null;
+        const result = await postTweet(content, null, mediaIds, passedCookies);
         console.log('[Operative1] post_broadcast result:', JSON.stringify(result));
         sendResponse(result);
 
@@ -373,4 +379,4 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
   return true;
 });
 
-console.log('[Operative1] Background service worker loaded, version 1.4.0');
+console.log('[Operative1] Background service worker loaded, version 1.5.0');

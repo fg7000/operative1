@@ -150,6 +150,17 @@ export default function BroadcastPage() {
     }
   }
 
+  async function fetchStoredCookies(): Promise<{auth_token: string; ct0: string} | null> {
+    if (!selectedProductId) return null
+    try {
+      const data = await apiFetch<{auth_token?: string; ct0?: string; error?: string}>(`/settings/twitter-cookies?product_id=${selectedProductId}`)
+      if (data.auth_token && data.ct0) return { auth_token: data.auth_token, ct0: data.ct0 }
+      return null
+    } catch {
+      return null
+    }
+  }
+
   async function postViaExtension(broadcast: Broadcast) {
     if (!extensionConnected) return
 
@@ -157,11 +168,13 @@ export default function BroadcastPage() {
     setActionError(null)
 
     try {
+      const stored = await fetchStoredCookies()
       const result = await new Promise<{ success: boolean; tweet_id?: string; error?: string }>((resolve) => {
         chrome.runtime.sendMessage(EXTENSION_ID, {
           action: 'post_broadcast',
           content: broadcast.content,
           media_url: broadcast.media_url,
+          ...(stored ? { auth_token: stored.auth_token, ct0: stored.ct0 } : {})
         }, (resp) => {
           if (chrome.runtime.lastError || !resp) {
             resolve({ success: false, error: 'Extension communication failed' })
