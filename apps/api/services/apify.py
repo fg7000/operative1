@@ -204,7 +204,7 @@ async def fetch_tweets(keywords: list) -> list:
 
     async with httpx.AsyncClient(timeout=300) as client:
         # Run ALL searches in parallel
-        tasks = [_run_single_search(client, kw, max_items=30) for kw in good_keywords]
+        tasks = [_run_single_search(client, kw, max_items=50) for kw in good_keywords]
         search_results = await asyncio.gather(*tasks, return_exceptions=True)
 
     # Deduplicate by tweet ID
