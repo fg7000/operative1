@@ -8,8 +8,13 @@ across the account to avoid:
 
 Strategy:
 - Maintain a global FIFO queue of items ready to post
-- Pop from queue with minimum 30-second gaps + random jitter
+- Dynamic posting intervals based on volume tier:
+    Tier 0 (10/day): avg gap ~108 min
+    Tier 1 (20/day): avg gap ~54 min
+    Tier 2 (40/day): avg gap ~27 min
+    Tier 3 (80/day): avg gap ~13.5 min
 - Track last global post time (not per-product)
+- Jitter: uniform random +/- 20% of base interval
 
 This works at the ACCOUNT level, not product level. Each Twitter account
 (connected via cookies) has a global posting cadence.
@@ -24,9 +29,51 @@ from services.database import supabase
 
 logger = logging.getLogger(__name__)
 
-# Global settings
-MIN_GAP_SECONDS = 30
-MAX_JITTER_SECONDS = 60
+# Active posting hours per day (6am-12am local time)
+ACTIVE_HOURS = 18
+
+# Fallback gap when no tier info is available
+DEFAULT_GAP_SECONDS = 600  # 10 min
+DEFAULT_JITTER_SECONDS = 120  # 2 min
+
+
+def get_dynamic_interval(user_id: str) -> tuple[int, int]:
+    """Calculate dynamic posting interval based on the highest tier among user's products.
+
+    Returns:
+        (base_gap_seconds, jitter_seconds)
+    """
+    from services.rate_limiter import TIER_CONFIG
+
+    # Get all products for this user to find the highest tier
+    res = supabase.table('products').select('autopilot') \
+        .eq('user_id', user_id) \
+        .eq('active', True) \
+        .execute()
+
+    max_tier = 0
+    for product in (res.data or []):
+        autopilot = product.get('autopilot') or {}
+        if autopilot.get('enabled', False):
+            tier = autopilot.get('tier', 0)
+            max_tier = max(max_tier, tier)
+
+    tier_config = TIER_CONFIG.get(max_tier, TIER_CONFIG[0])
+    daily_cap = tier_config['daily_cap']
+
+    # interval = (active_hours * 60 / daily_target) minutes
+    base_gap_minutes = (ACTIVE_HOURS * 60) / daily_cap
+    base_gap_seconds = int(base_gap_minutes * 60)
+
+    # Jitter: +/- 20% of base interval
+    jitter_seconds = int(base_gap_seconds * 0.2)
+
+    logger.debug(
+        f"Dynamic interval for user {user_id[:8]}: tier={max_tier}, "
+        f"daily_cap={daily_cap}, gap={base_gap_seconds}s +/- {jitter_seconds}s"
+    )
+
+    return base_gap_seconds, jitter_seconds
 
 
 def get_global_last_post_time(user_id: str) -> Optional[datetime]:
@@ -51,8 +98,13 @@ def get_global_last_post_time(user_id: str) -> Optional[datetime]:
 def calculate_next_post_time(user_id: str) -> datetime:
     """Calculate when the next post can be made for this user's account.
 
-    Returns a datetime that is at least MIN_GAP_SECONDS + random jitter
-    after the last post.
+    Uses dynamic interval based on the user's highest product tier:
+        Tier 0 (10/day): ~108 min gap
+        Tier 1 (20/day): ~54 min gap
+        Tier 2 (40/day): ~27 min gap
+        Tier 3 (80/day): ~13.5 min gap
+
+    Jitter is +/- 20% of the base interval.
     """
     last_post = get_global_last_post_time(user_id)
     now = datetime.now(timezone.utc)
@@ -65,9 +117,14 @@ def calculate_next_post_time(user_id: str) -> datetime:
     if last_post.tzinfo is None:
         last_post = last_post.replace(tzinfo=timezone.utc)
 
-    # Add minimum gap + random jitter
-    jitter = random.randint(0, MAX_JITTER_SECONDS)
-    next_allowed = last_post + timedelta(seconds=MIN_GAP_SECONDS + jitter)
+    # Get dynamic interval based on tier
+    base_gap, jitter_range = get_dynamic_interval(user_id)
+
+    # Apply jitter: uniform random +/- jitter_range
+    jitter = random.randint(-jitter_range, jitter_range)
+    gap = max(60, base_gap + jitter)  # Floor at 60 seconds
+
+    next_allowed = last_post + timedelta(seconds=gap)
 
     if next_allowed <= now:
         return now
@@ -161,9 +218,9 @@ async def get_global_queue_stats(user_id: str) -> dict:
             last_post = last_post.replace(tzinfo=timezone.utc)
         last_post_age = int((now - last_post).total_seconds())
 
-    # Estimate time to clear queue
-    # Average post interval = MIN_GAP + (MAX_JITTER / 2)
-    avg_interval = MIN_GAP_SECONDS + (MAX_JITTER_SECONDS / 2)
+    # Estimate time to clear queue using dynamic interval
+    base_gap, jitter_range = get_dynamic_interval(user_id)
+    avg_interval = base_gap  # Jitter averages out to 0
     total_items = pending_count + approved_count
     estimated_clear = int((total_items * avg_interval) / 60)  # minutes
 
