@@ -118,7 +118,7 @@ app.add_middleware(
         "https://operative1.vercel.app",
         "https://operative1-*.vercel.app",
         "http://localhost:3000",
-        "chrome-extension://mknleilncammjmbjgacjdimfmdenfdpc",
+        "chrome-extension://hijlbfcjchioeciejpiejadapjgmbncn",
     ],
     allow_credentials=True,
     allow_methods=["*"],
