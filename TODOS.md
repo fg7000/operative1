@@ -52,6 +52,20 @@ Items from the multi-product dashboard implementation that were deferred for fut
 - **Context:** Show extension install instructions + product ID after product is created
 - **Effort:** S
 
+### Daily Summary Notification
+- **What:** Generate a 24h autopilot summary (posts sent, failed, skipped, top reply, health status) as a dashboard banner on next visit
+- **Why:** Gives at-a-glance performance without manually checking autopilot-log endpoint
+- **Context:** The autopilot-log endpoint already returns all this data. This is a UX layer on top. Requires tracking 'last seen' timestamp per user.
+- **Effort:** M (human) / S (CC)
+- **Depends on:** Autopilot-log endpoint (shipped in v0.1.0.0)
+
+### Reply Quality Feedback Loop
+- **What:** Track engagement on auto-posted replies (likes, quote tweets, reply-backs). Feed data into optimizer to auto-tune relevance thresholds and reply mode distribution.
+- **Why:** Currently flying blind on whether replies actually drive engagement. The optimizer service exists but is log-only with no data.
+- **Context:** engagement.py pipeline disabled since tweepy removal. optimizer.py exists but has no data. Requires rebuilding engagement metrics collection via GraphQL.
+- **Effort:** L (human) / M (CC)
+- **Depends on:** GraphQL Metrics Collection (P3 below)
+
 ## P3 - Lower Priority
 
 ### GraphQL Metrics Collection
