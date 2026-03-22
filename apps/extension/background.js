@@ -159,71 +159,120 @@ function buildTweetPayload(text, replyToTweetId, mediaIds = [], queryId = FALLBA
   };
 }
 
+// Find an existing x.com tab or create one
+async function getXTab() {
+  const tabs = await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] });
+  if (tabs.length > 0) {
+    console.log('[Operative1] Found existing x.com tab:', tabs[0].id);
+    return tabs[0];
+  }
+  // No x.com tab open — create one in background
+  console.log('[Operative1] No x.com tab found, creating one...');
+  const tab = await chrome.tabs.create({ url: 'https://x.com/home', active: false });
+  // Wait for it to finish loading
+  await new Promise((resolve) => {
+    function listener(tabId, info) {
+      if (tabId === tab.id && info.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    }
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+  console.log('[Operative1] Created x.com tab:', tab.id);
+  return tab;
+}
+
 async function postTweet(text, replyToTweetId, mediaIds = [], passedCookies = null, _retried = false) {
-  console.log('[Operative1] postTweet called');
+  console.log('[Operative1] postTweet called (content script injection)');
   console.log('[Operative1] Reply to tweet ID:', replyToTweetId);
   console.log('[Operative1] Tweet text:', text);
   console.log('[Operative1] Media IDs:', mediaIds);
-  console.log('[Operative1] Using passed cookies:', passedCookies ? 'yes' : 'no (falling back to browser)');
-
-  // Always prefer fresh browser cookies (ct0 rotates frequently)
-  // Fall back to passed/stored cookies only if browser cookies unavailable
-  const browserCookies = await getTwitterCookies();
-  const cookies = browserCookies || passedCookies;
-  console.log('[Operative1] Cookie source:', browserCookies ? 'browser (fresh)' : passedCookies ? 'passed (stored)' : 'none');
-
-  if (!cookies) {
-    console.log('[Operative1] ERROR: No cookies found');
-    return { success: false, error: 'Not logged into Twitter. Please log in at x.com first.' };
-  }
 
   // Get dynamic queryId
   const queryId = await getQueryId();
+  const payload = buildTweetPayload(text, replyToTweetId, mediaIds, queryId);
   const graphqlUrl = `https://x.com/i/api/graphql/${queryId}/CreateTweet`;
 
-  const headers = {
-    'authorization': `Bearer ${TWITTER_BEARER}`,
-    'x-csrf-token': cookies.ct0,
-    'content-type': 'application/json',
-    'x-twitter-auth-type': 'OAuth2Session',
-    'x-twitter-active-user': 'yes',
-    'x-twitter-client-language': 'en'
-  };
-
-  const payload = buildTweetPayload(text, replyToTweetId, mediaIds, queryId);
-
-  console.log('[Operative1] Request URL:', graphqlUrl);
   console.log('[Operative1] Using queryId:', queryId);
-  console.log('[Operative1] Request payload:', JSON.stringify(payload, null, 2));
+  console.log('[Operative1] Request URL:', graphqlUrl);
 
+  // Find or create an x.com tab to inject into
+  let tab;
   try {
-    const response = await fetch(graphqlUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-      credentials: 'include'
+    tab = await getXTab();
+  } catch (e) {
+    console.log('[Operative1] ERROR: Could not get x.com tab:', e.message);
+    return { success: false, error: 'Could not find or create x.com tab. Please open x.com in a tab.' };
+  }
+
+  // Inject content script that makes the fetch from x.com page context
+  try {
+    const injectionResults = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN', // Run in page context so fetch has x.com origin + cookies
+      func: async (graphqlUrl, payloadStr, bearerToken) => {
+        try {
+          // Read ct0 from document cookies (always fresh)
+          const ct0Match = document.cookie.match(/ct0=([^;]+)/);
+          const ct0 = ct0Match ? ct0Match[1] : null;
+
+          if (!ct0) {
+            return { success: false, error: 'No ct0 cookie found on x.com. Please log in.' };
+          }
+
+          const response = await fetch(graphqlUrl, {
+            method: 'POST',
+            headers: {
+              'authorization': `Bearer ${bearerToken}`,
+              'x-csrf-token': ct0,
+              'content-type': 'application/json',
+              'x-twitter-auth-type': 'OAuth2Session',
+              'x-twitter-active-user': 'yes',
+              'x-twitter-client-language': 'en'
+            },
+            body: payloadStr,
+            credentials: 'include'
+          });
+
+          const responseText = await response.text();
+          let data;
+          try {
+            data = JSON.parse(responseText);
+          } catch (e) {
+            return { success: false, error: `Invalid JSON: ${responseText.slice(0, 200)}`, status: response.status };
+          }
+
+          return { success: true, data, status: response.status, responseText: responseText.slice(0, 1000) };
+        } catch (e) {
+          return { success: false, error: `Fetch error: ${e.message}` };
+        }
+      },
+      args: [graphqlUrl, JSON.stringify(payload), TWITTER_BEARER]
     });
 
-    console.log('[Operative1] Response status:', response.status);
-
-    const responseText = await response.text();
-    console.log('[Operative1] Raw response body:', responseText.slice(0, 500));
-
-    let data;
-    try {
-      data = JSON.parse(responseText);
-    } catch (parseErr) {
-      console.log('[Operative1] ERROR: Failed to parse response as JSON:', parseErr.message);
-      return { success: false, error: `Invalid JSON response: ${responseText.slice(0, 200)}` };
+    const result = injectionResults?.[0]?.result;
+    if (!result) {
+      console.log('[Operative1] ERROR: No result from content script injection');
+      return { success: false, error: 'Content script returned no result. x.com tab may have navigated away.' };
     }
 
-    if (response.status === 200) {
-      // Check for errors array first
+    console.log('[Operative1] Content script response status:', result.status);
+    console.log('[Operative1] Content script response:', result.responseText?.slice(0, 500));
+
+    if (!result.success) {
+      console.log('[Operative1] ERROR from content script:', result.error);
+      return { success: false, error: result.error };
+    }
+
+    const data = result.data;
+
+    if (result.status === 200) {
+      // Check for GraphQL errors
       if (data.errors && data.errors.length > 0) {
         const errorMsg = data.errors[0].message || JSON.stringify(data.errors[0]);
         console.log('[Operative1] ERROR: GraphQL errors:', errorMsg);
 
-        // Retry with fresh queryId if this looks like a stale queryId error
         if (!_retried && (errorMsg.includes('not found') || errorMsg.includes('query'))) {
           console.log('[Operative1] Possible stale queryId, refreshing and retrying...');
           cachedQueryId = null;
@@ -233,7 +282,7 @@ async function postTweet(text, replyToTweetId, mediaIds = [], passedCookies = nu
         return { success: false, error: `Twitter error: ${errorMsg}` };
       }
 
-      // Check for tweet result
+      // Extract tweet ID
       const tweetResult = data?.data?.create_tweet?.tweet_results?.result;
       const tweetId = tweetResult?.rest_id;
 
@@ -242,32 +291,25 @@ async function postTweet(text, replyToTweetId, mediaIds = [], passedCookies = nu
         return { success: true, tweet_id: tweetId };
       } else {
         console.log('[Operative1] ERROR: No tweet ID found. Full data:', JSON.stringify(data, null, 2));
-        return { success: false, error: 'Tweet may have posted but could not confirm ID. Check console for details.' };
+        return { success: false, error: 'Tweet may have posted but could not confirm ID.' };
       }
-    } else if (response.status === 400 || response.status === 404) {
-      // Bad request or not found — likely stale queryId
+    } else if (result.status === 400 || result.status === 404) {
       if (!_retried) {
-        console.log('[Operative1] Got', response.status, '— refreshing queryId and retrying...');
+        console.log('[Operative1] Got', result.status, '— refreshing queryId and retrying...');
         cachedQueryId = null;
         return postTweet(text, replyToTweetId, mediaIds, passedCookies, true);
       }
-      console.log('[Operative1] ERROR: Still got', response.status, 'after queryId refresh:', responseText.slice(0, 300));
-      return { success: false, error: `Twitter returned status ${response.status}: ${responseText.slice(0, 200)}` };
-    } else if (response.status === 403) {
-      if (responseText.toLowerCase().includes('ct0') || responseText.toLowerCase().includes('csrf')) {
-        return { success: false, error: 'Twitter session expired. Please refresh x.com and try again.' };
-      }
-      console.log('[Operative1] ERROR: 403 Forbidden:', responseText.slice(0, 300));
-      return { success: false, error: `Twitter rejected: ${responseText.slice(0, 200)}` };
-    } else if (response.status === 401) {
+      return { success: false, error: `Twitter returned status ${result.status}: ${result.responseText?.slice(0, 200)}` };
+    } else if (result.status === 403) {
+      return { success: false, error: `Twitter rejected (403): ${result.responseText?.slice(0, 200)}` };
+    } else if (result.status === 401) {
       return { success: false, error: 'Twitter authentication failed. Please log in at x.com.' };
     } else {
-      console.log('[Operative1] ERROR: Unexpected status', response.status, responseText.slice(0, 300));
-      return { success: false, error: `Twitter returned status ${response.status}: ${responseText.slice(0, 200)}` };
+      return { success: false, error: `Twitter returned status ${result.status}: ${result.responseText?.slice(0, 200)}` };
     }
   } catch (e) {
-    console.log('[Operative1] ERROR: Network/fetch error:', e.message, e.stack);
-    return { success: false, error: `Network error: ${e.message}` };
+    console.log('[Operative1] ERROR: Script injection failed:', e.message, e.stack);
+    return { success: false, error: `Script injection error: ${e.message}` };
   }
 }
 
@@ -369,8 +411,8 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
   console.log('[Operative1] Received message:', action, 'from:', sender.origin);
 
   if (action === 'ping') {
-    console.log('[Operative1] Ping received, responding with version 1.6.0');
-    sendResponse({ success: true, version: '1.6.0' });
+    console.log('[Operative1] Ping received, responding with version 1.7.0');
+    sendResponse({ success: true, version: '1.7.0' });
     return true;
   }
 
@@ -467,4 +509,4 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
   return true;
 });
 
-console.log('[Operative1] Background service worker loaded, version 1.6.0 (dynamic queryId)');
+console.log('[Operative1] Background service worker loaded, version 1.7.0 (content script injection)');
