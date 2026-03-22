@@ -134,7 +134,6 @@ async def save_twitter_cookies(body: SaveTwitterCookiesRequest):
             # Update existing record
             supabase.table('social_accounts').update({
                 'credentials_encrypted': encrypted,
-                'platform_handle': body.twitter_handle or '',
             }).eq('id', existing.data[0]['id']).execute()
             logger.info(f"Updated Twitter credentials for product {body.product_id}")
         else:
@@ -143,7 +142,6 @@ async def save_twitter_cookies(body: SaveTwitterCookiesRequest):
                 'product_id': body.product_id,
                 'platform': 'twitter',
                 'credentials_encrypted': encrypted,
-                'platform_handle': body.twitter_handle or '',
             }).execute()
             logger.info(f"Saved new Twitter credentials for product {body.product_id}")
 
