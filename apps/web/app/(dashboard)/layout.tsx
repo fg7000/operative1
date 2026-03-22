@@ -124,9 +124,27 @@ function ProductSwitcher({ onSelect }: { onSelect?: () => void }) {
   )
 }
 
+type HealthData = {
+  health: string
+  tier: number
+  daily_cap: number
+  posts_today: number
+  paused: boolean
+  paused_until: string | null
+  pause_reason: string | null
+}
+
+const HEALTH_COLORS: Record<string, { dot: string; bg: string; text: string; label: string }> = {
+  green:  { dot: '#22c55e', bg: 'rgba(34, 197, 94, 0.08)',  text: '#166534', label: 'Autopilot active' },
+  yellow: { dot: '#eab308', bg: 'rgba(234, 179, 8, 0.08)',   text: '#854d0e', label: 'Autopilot degraded' },
+  red:    { dot: '#ef4444', bg: 'rgba(239, 68, 68, 0.08)',   text: '#991b1b', label: 'Autopilot unhealthy' },
+}
+
 function AutopilotIndicator() {
-  const { selectedProduct } = useProducts()
+  const { selectedProduct, selectedProductId } = useProducts()
   const isAutopilotActive = selectedProduct?.autopilot?.enabled ?? false
+  const [health, setHealth] = useState<HealthData | null>(null)
+  const [actionLoading, setActionLoading] = useState(false)
 
   useEffect(() => {
     if (!isAutopilotActive) return
@@ -141,26 +159,145 @@ function AutopilotIndicator() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [isAutopilotActive])
 
+  useEffect(() => {
+    if (!isAutopilotActive || !selectedProductId) {
+      setHealth(null)
+      return
+    }
+    let cancelled = false
+    async function fetchHealth() {
+      try {
+        const data = await apiFetch<HealthData>(`/queue/health?product_id=${selectedProductId}`)
+        if (!cancelled) setHealth(data)
+      } catch {
+        if (!cancelled) setHealth(null)
+      }
+    }
+    fetchHealth()
+    const interval = setInterval(fetchHealth, 30000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [isAutopilotActive, selectedProductId])
+
   if (!isAutopilotActive) return null
 
+  const colors = HEALTH_COLORS[health?.health || 'green'] || HEALTH_COLORS.green
+  const isPaused = health?.paused ?? false
+  const pauseReason = health?.pause_reason
+  const pausedUntil = health?.paused_until
+
+  async function togglePause() {
+    if (!selectedProductId || actionLoading) return
+    setActionLoading(true)
+    try {
+      if (isPaused) {
+        await apiFetch(`/queue/resume?product_id=${selectedProductId}`, { method: 'POST' })
+      } else {
+        await apiFetch(`/queue/pause?product_id=${selectedProductId}`, {
+          method: 'POST',
+          body: JSON.stringify({})
+        })
+      }
+      const data = await apiFetch<HealthData>(`/queue/health?product_id=${selectedProductId}`)
+      setHealth(data)
+    } catch (e) {
+      console.error('Pause/resume failed:', e)
+    }
+    setActionLoading(false)
+  }
+
+  function formatPauseInfo(): string {
+    if (!isPaused) return ''
+    if (pauseReason === 'extension_offline') return 'Extension offline'
+    if (pauseReason === 'failure_streak') {
+      if (pausedUntil) {
+        const until = new Date(pausedUntil)
+        return `Cooling down until ${until.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+      }
+      return 'Paused (too many failures)'
+    }
+    if (pauseReason === 'manual') return 'Manually paused'
+    if (pausedUntil) {
+      const until = new Date(pausedUntil)
+      return `Paused until ${until.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    }
+    return 'Paused'
+  }
+
   return (
-    <div style={{
-      padding: '8px 12px',
-      margin: '0 12px 8px',
-      background: 'rgba(34, 197, 94, 0.08)',
-      borderRadius: '8px',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '8px',
-    }}>
+    <div style={{ margin: '0 12px 8px' }}>
+      {/* Main status row */}
       <div style={{
-        width: '8px',
-        height: '8px',
-        borderRadius: '50%',
-        background: '#22c55e',
-        animation: 'autopilotPulse 2s ease-in-out infinite',
-      }}/>
-      <span style={{ fontSize: '12px', fontWeight: 500, color: '#166534' }}>Autopilot active</span>
+        padding: '8px 12px',
+        background: isPaused ? 'rgba(239, 68, 68, 0.08)' : colors.bg,
+        borderRadius: isPaused ? '8px 8px 0 0' : '8px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+      }}>
+        <div style={{
+          width: '8px',
+          height: '8px',
+          borderRadius: '50%',
+          background: isPaused ? '#ef4444' : colors.dot,
+          animation: isPaused ? 'none' : 'autopilotPulse 2s ease-in-out infinite',
+        }}/>
+        <span style={{
+          fontSize: '12px',
+          fontWeight: 500,
+          color: isPaused ? '#991b1b' : colors.text,
+          flex: 1,
+        }}>
+          {isPaused ? formatPauseInfo() : colors.label}
+        </span>
+        {health && (
+          <span style={{ fontSize: '10px', color: '#999' }}>
+            T{health.tier} {health.posts_today}/{health.daily_cap}
+          </span>
+        )}
+        <button
+          onClick={togglePause}
+          disabled={actionLoading}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: actionLoading ? 'not-allowed' : 'pointer',
+            fontSize: '11px',
+            fontWeight: 600,
+            color: isPaused ? '#166534' : '#991b1b',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            opacity: actionLoading ? 0.5 : 1,
+          }}
+        >
+          {actionLoading ? '...' : (isPaused ? 'Resume' : 'Pause')}
+        </button>
+      </div>
+
+      {/* Pause reason banner */}
+      {isPaused && pauseReason === 'extension_offline' && (
+        <div style={{
+          padding: '6px 12px',
+          background: '#fff3e0',
+          borderRadius: '0 0 8px 8px',
+          borderTop: '1px solid #ffe0b2',
+          fontSize: '11px',
+          color: '#e65100',
+        }}>
+          Extension not sending heartbeats. Open the dashboard tab with the extension active to resume.
+        </div>
+      )}
+      {isPaused && pauseReason === 'failure_streak' && (
+        <div style={{
+          padding: '6px 12px',
+          background: '#ffebee',
+          borderRadius: '0 0 8px 8px',
+          borderTop: '1px solid #ffcdd2',
+          fontSize: '11px',
+          color: '#c62828',
+        }}>
+          Multiple consecutive posting failures detected. Check your Twitter connection.
+        </div>
+      )}
     </div>
   )
 }
