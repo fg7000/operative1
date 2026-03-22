@@ -155,7 +155,7 @@ async def process_autopilot_item(queue_item: dict, product: dict) -> dict:
     # Mark as auto_approved (posting will be handled by global queue)
     supabase.table('reply_queue').update({
         'status': 'auto_approved',
-    }).eq('id', queue_id).execute()
+    }).eq('id', queue_id).eq('status', 'pending').execute()
 
     logger.info(f"Autopilot: auto-approved queue item {queue_id[:8]}")
 

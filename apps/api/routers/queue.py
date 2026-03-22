@@ -446,7 +446,12 @@ async def mark_posted(
     if not token_product_id:
         await verify_queue_item_ownership(user_id, queue_id)
 
-    existing = supabase.table('reply_queue').select('engagement_metrics').eq('id', queue_id).execute()
+    existing = supabase.table('reply_queue').select('engagement_metrics,product_id').eq('id', queue_id).execute()
+
+    # Verify product token owns this queue item
+    if token_product_id and existing.data:
+        if existing.data[0].get('product_id') != token_product_id:
+            raise HTTPException(status_code=403, detail="Queue item does not belong to this product")
     metrics = (existing.data[0].get('engagement_metrics') or {}) if existing.data else {}
     if body.posted_tweet_id:
         metrics['posted_tweet_id'] = str(body.posted_tweet_id)
@@ -476,6 +481,12 @@ async def mark_failed(
     user_id, token_product_id = auth
     if not token_product_id:
         await verify_queue_item_ownership(user_id, queue_id)
+
+    # Verify product token owns this queue item
+    if token_product_id:
+        item = supabase.table('reply_queue').select('product_id').eq('id', queue_id).execute()
+        if item.data and item.data[0].get('product_id') != token_product_id:
+            raise HTTPException(status_code=403, detail="Queue item does not belong to this product")
 
     # STATUS UPDATE ONLY — no deletions allowed
     supabase.table('reply_queue').update({

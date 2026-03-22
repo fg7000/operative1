@@ -168,13 +168,13 @@ async def verify_product_token(token: str) -> tuple[str, str]:
             detail="Invalid product token"
         )
 
-    # Search products for matching token
-    res = supabase.table('products').select('id,user_id,autopilot').execute()
+    # Search products for matching token using JSONB filter
+    res = supabase.table('products').select('id,user_id').eq(
+        'autopilot->>api_token', token
+    ).execute()
 
-    for product in (res.data or []):
-        autopilot = product.get('autopilot') or {}
-        if autopilot.get('api_token') == token:
-            return product['user_id'], product['id']
+    if res.data and len(res.data) > 0:
+        return res.data[0]['user_id'], res.data[0]['id']
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
