@@ -489,11 +489,20 @@ async def mark_failed(
             raise HTTPException(status_code=403, detail="Queue item does not belong to this product")
 
     # STATUS UPDATE ONLY — no deletions allowed
+    error_msg = body.error or 'Extension posting failed'
+
+    # Permanent failures get 'rejected' (never retried by autopilot)
+    permanent_errors = ['duplicate_tweet', 'duplicate', 'already been sent']
+    if any(pe in error_msg.lower() for pe in permanent_errors):
+        status = 'rejected'
+    else:
+        status = 'failed'
+
     supabase.table('reply_queue').update({
-        'status': 'failed',
-        'rejection_reason': body.error or 'Extension posting failed'
+        'status': status,
+        'rejection_reason': error_msg
     }).eq('id', queue_id).execute()
-    return {"status": "failed"}
+    return {"status": status}
 
 
 # ─── Autopilot Endpoints ─────────────────────────────────────────

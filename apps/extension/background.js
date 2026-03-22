@@ -670,13 +670,21 @@ async function autopilotPollCycle() {
     // Update last post timestamp
     await new Promise(r => chrome.storage.local.set({ lastPostTimestamp: Date.now() }, r));
   } else {
-    console.log(`[Operative1] Autopilot: posting failed: ${result.error}`);
-    await markItemFailed(autopilot_api_url, autopilot_product_token, item.id, result.error);
+    const err = result.error || '';
+    console.log(`[Operative1] Autopilot: posting failed: ${err}`);
+
+    // Duplicate tweet (code 187) — mark as rejected (permanent, never retry)
+    if (err.includes('duplicate') || err.includes('already been sent') || err.includes('187')) {
+      console.log('[Operative1] Autopilot: duplicate tweet detected, rejecting permanently');
+      await markItemFailed(autopilot_api_url, autopilot_product_token, item.id, 'duplicate_tweet');
+      return;
+    }
+
+    await markItemFailed(autopilot_api_url, autopilot_product_token, item.id, err);
 
     // If cookies expired (403), pause autopilot
-    if (result.error && (result.error.includes('403') || result.error.includes('authentication'))) {
+    if (err.includes('403') || err.includes('authentication')) {
       console.log('[Operative1] Autopilot: cookies may have expired, pausing');
-      await markItemFailed(autopilot_api_url, autopilot_product_token, item.id, 'cookies_expired');
     }
   }
 }
