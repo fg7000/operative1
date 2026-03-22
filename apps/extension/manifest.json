@@ -1,16 +1,19 @@
 {
   "manifest_version": 3,
   "name": "Operative1 - AI Reply Marketing",
-  "version": "1.7.0",
+  "version": "2.0.0",
   "description": "Connect Twitter/X to Operative1. AI finds conversations, drafts replies, and posts from your browser. One-click setup.",
   "permissions": [
     "cookies",
     "scripting",
-    "tabs"
+    "tabs",
+    "alarms",
+    "storage"
   ],
   "host_permissions": [
     "https://x.com/*",
-    "https://twitter.com/*"
+    "https://twitter.com/*",
+    "https://operative1-production.up.railway.app/*"
   ],
   "background": {
     "service_worker": "background.js"

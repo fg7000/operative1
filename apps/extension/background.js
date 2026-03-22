@@ -504,9 +504,252 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
     return true;
   }
 
+  // Configure autopilot: set product token + API URL
+  if (action === 'configure_autopilot') {
+    const { product_token, api_url, product_id } = request;
+    if (!product_token || !product_id) {
+      sendResponse({ success: false, error: 'Missing product_token or product_id' });
+      return true;
+    }
+    chrome.storage.local.set({
+      autopilot_product_token: product_token,
+      autopilot_api_url: api_url || 'https://operative1-production.up.railway.app',
+      autopilot_product_id: product_id,
+      autopilot_enabled: true,
+    }, () => {
+      console.log('[Operative1] Autopilot configured for product:', product_id);
+      // Start the polling alarm
+      chrome.alarms.create('autopilot-poll', { periodInMinutes: 1 });
+      chrome.alarms.create('autopilot-heartbeat', { periodInMinutes: 1 });
+      sendResponse({ success: true });
+    });
+    return true;
+  }
+
+  if (action === 'disable_autopilot') {
+    chrome.storage.local.set({ autopilot_enabled: false }, () => {
+      chrome.alarms.clear('autopilot-poll');
+      chrome.alarms.clear('autopilot-heartbeat');
+      console.log('[Operative1] Autopilot disabled');
+      sendResponse({ success: true });
+    });
+    return true;
+  }
+
+  if (action === 'get_autopilot_status') {
+    chrome.storage.local.get([
+      'autopilot_enabled', 'autopilot_product_id',
+      'lastPostTimestamp', 'autopilot_dedup_set'
+    ], (data) => {
+      sendResponse({
+        enabled: data.autopilot_enabled || false,
+        product_id: data.autopilot_product_id || null,
+        last_post: data.lastPostTimestamp || null,
+        dedup_count: (data.autopilot_dedup_set || []).length,
+      });
+    });
+    return true;
+  }
+
   console.log('[Operative1] Unknown action:', action);
   sendResponse({ success: false, error: 'Unknown action' });
   return true;
 });
 
-console.log('[Operative1] Background service worker loaded, version 1.7.0 (content script injection)');
+
+// ─── Autopilot Polling System ────────────────────────────────────
+// Uses chrome.alarms API for MV3 service worker reliability.
+// Polls GET /queue/auto-approved every 60s.
+// Only posts when: now - lastPostTimestamp >= baseGap(600s) + jitter(0-300s)
+// Posts one item per cycle max.
+// Maintains dedup set (50 IDs, 1h TTL) in chrome.storage.local.
+
+const AUTOPILOT_BASE_GAP_S = 600;  // 10 minutes
+const AUTOPILOT_MAX_JITTER_S = 300; // 5 minutes
+const DEDUP_MAX_SIZE = 50;
+const DEDUP_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+async function getAutopilotConfig() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get([
+      'autopilot_enabled', 'autopilot_product_token',
+      'autopilot_api_url', 'autopilot_product_id',
+      'lastPostTimestamp', 'autopilot_dedup_set',
+    ], resolve);
+  });
+}
+
+function cleanDedupSet(dedupSet) {
+  const now = Date.now();
+  return (dedupSet || []).filter(entry => (now - entry.ts) < DEDUP_TTL_MS).slice(-DEDUP_MAX_SIZE);
+}
+
+async function autopilotPollCycle() {
+  const config = await getAutopilotConfig();
+  if (!config.autopilot_enabled) return;
+
+  const { autopilot_product_token, autopilot_api_url, autopilot_product_id } = config;
+  if (!autopilot_product_token || !autopilot_product_id) {
+    console.log('[Operative1] Autopilot: missing token or product_id');
+    return;
+  }
+
+  // Check posting gate: enough time since last post?
+  const now = Date.now();
+  const lastPost = config.lastPostTimestamp || 0;
+  const jitter = Math.floor(Math.random() * AUTOPILOT_MAX_JITTER_S);
+  const requiredGap = (AUTOPILOT_BASE_GAP_S + jitter) * 1000;
+
+  if ((now - lastPost) < requiredGap) {
+    const waitSec = Math.round((requiredGap - (now - lastPost)) / 1000);
+    console.log(`[Operative1] Autopilot: posting gate not met, wait ${waitSec}s`);
+    return;
+  }
+
+  // Fetch auto-approved items from backend
+  const url = `${autopilot_api_url}/queue/auto-approved?product_id=${autopilot_product_id}&product_token=${autopilot_product_token}`;
+
+  let items;
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      console.log('[Operative1] Autopilot: API error', resp.status);
+      if (resp.status === 401 || resp.status === 403) {
+        console.log('[Operative1] Autopilot: token invalid, disabling');
+        chrome.storage.local.set({ autopilot_enabled: false });
+        chrome.alarms.clear('autopilot-poll');
+        chrome.alarms.clear('autopilot-heartbeat');
+      }
+      return;
+    }
+    items = await resp.json();
+  } catch (e) {
+    console.log('[Operative1] Autopilot: fetch error', e.message);
+    return;
+  }
+
+  if (!items || items.length === 0) {
+    console.log('[Operative1] Autopilot: no auto-approved items');
+    return;
+  }
+
+  // Clean dedup set
+  let dedupSet = cleanDedupSet(config.autopilot_dedup_set);
+  const dedupIds = new Set(dedupSet.map(e => e.id));
+
+  // Find first item not in dedup set
+  const item = items.find(i => !dedupIds.has(i.id));
+  if (!item) {
+    console.log('[Operative1] Autopilot: all items in dedup set, skipping');
+    return;
+  }
+
+  console.log(`[Operative1] Autopilot: posting item ${item.id.slice(0, 8)}`);
+
+  // Extract tweet ID from original_url
+  const tweetId = extractTweetIdFromUrl(item.original_url || '');
+  const replyText = item.edited_reply || item.draft_reply || '';
+
+  if (!tweetId || !replyText) {
+    console.log('[Operative1] Autopilot: missing tweet_id or reply text, marking failed');
+    await markItemFailed(autopilot_api_url, autopilot_product_token, item.id, 'Missing tweet_id or reply text');
+    return;
+  }
+
+  // Post via content script injection
+  const result = await postTweet(replyText, tweetId);
+
+  // Add to dedup set regardless of outcome (prevents re-attempts)
+  dedupSet.push({ id: item.id, ts: Date.now() });
+  dedupSet = dedupSet.slice(-DEDUP_MAX_SIZE);
+  await new Promise(r => chrome.storage.local.set({ autopilot_dedup_set: dedupSet }, r));
+
+  if (result.success) {
+    console.log(`[Operative1] Autopilot: posted successfully, tweet_id=${result.tweet_id}`);
+    await markItemPosted(autopilot_api_url, autopilot_product_token, item.id, result.tweet_id);
+    // Update last post timestamp
+    await new Promise(r => chrome.storage.local.set({ lastPostTimestamp: Date.now() }, r));
+  } else {
+    console.log(`[Operative1] Autopilot: posting failed: ${result.error}`);
+    await markItemFailed(autopilot_api_url, autopilot_product_token, item.id, result.error);
+
+    // If cookies expired (403), pause autopilot
+    if (result.error && (result.error.includes('403') || result.error.includes('authentication'))) {
+      console.log('[Operative1] Autopilot: cookies may have expired, pausing');
+      await markItemFailed(autopilot_api_url, autopilot_product_token, item.id, 'cookies_expired');
+    }
+  }
+}
+
+function extractTweetIdFromUrl(url) {
+  if (!url) return '';
+  const parts = url.split('/');
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i] === 'status' && i + 1 < parts.length) {
+      return parts[i + 1].split('?')[0];
+    }
+  }
+  return '';
+}
+
+async function markItemPosted(apiUrl, token, queueId, tweetId) {
+  try {
+    await fetch(`${apiUrl}/queue/${queueId}/mark-posted?product_token=${token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ posted_tweet_id: tweetId || null }),
+    });
+  } catch (e) {
+    console.log('[Operative1] Autopilot: mark-posted error', e.message);
+  }
+}
+
+async function markItemFailed(apiUrl, token, queueId, error) {
+  try {
+    await fetch(`${apiUrl}/queue/${queueId}/mark-failed?product_token=${token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: error || 'Unknown error' }),
+    });
+  } catch (e) {
+    console.log('[Operative1] Autopilot: mark-failed error', e.message);
+  }
+}
+
+async function sendHeartbeat() {
+  const config = await getAutopilotConfig();
+  if (!config.autopilot_enabled) return;
+
+  const { autopilot_product_token, autopilot_api_url, autopilot_product_id } = config;
+  if (!autopilot_product_token || !autopilot_product_id) return;
+
+  try {
+    await fetch(`${autopilot_api_url}/queue/extension-heartbeat?product_token=${autopilot_product_token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_id: autopilot_product_id }),
+    });
+  } catch (e) {
+    console.log('[Operative1] Heartbeat error:', e.message);
+  }
+}
+
+// chrome.alarms handler — reliable in MV3 service workers
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'autopilot-poll') {
+    autopilotPollCycle().catch(e => console.log('[Operative1] Poll cycle error:', e.message));
+  } else if (alarm.name === 'autopilot-heartbeat') {
+    sendHeartbeat().catch(e => console.log('[Operative1] Heartbeat send error:', e.message));
+  }
+});
+
+// On service worker startup, restore alarms if autopilot was enabled
+chrome.storage.local.get(['autopilot_enabled'], (data) => {
+  if (data.autopilot_enabled) {
+    chrome.alarms.create('autopilot-poll', { periodInMinutes: 1 });
+    chrome.alarms.create('autopilot-heartbeat', { periodInMinutes: 1 });
+    console.log('[Operative1] Autopilot alarms restored on service worker startup');
+  }
+});
+
+console.log('[Operative1] Background service worker loaded, version 2.0.0 (autopilot + content script injection)');
