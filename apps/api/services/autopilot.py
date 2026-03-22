@@ -258,7 +258,7 @@ def check_heartbeat(product: dict) -> bool:
         stale_items = supabase.table('reply_queue').select('id', count='exact') \
             .eq('product_id', product['id']) \
             .eq('status', 'auto_approved') \
-            .lt('updated_at', cutoff) \
+            .lt('created_at', cutoff) \
             .execute()
 
         if (stale_items.count or 0) > 0:

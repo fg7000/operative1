@@ -79,15 +79,15 @@ def get_dynamic_interval(user_id: str) -> tuple[int, int]:
 def get_global_last_post_time(user_id: str) -> Optional[datetime]:
     """Get the time of the last post for this user's account (across all products)."""
     # Query all posted items for this user, ordered by posted_at
-    res = supabase.table('reply_queue').select('updated_at') \
+    res = supabase.table('reply_queue').select('posted_at') \
         .eq('user_id', user_id) \
         .eq('status', 'posted') \
-        .order('updated_at', desc=True) \
+        .order('posted_at', desc=True) \
         .limit(1) \
         .execute()
 
-    if res.data and res.data[0].get('updated_at'):
-        ts = res.data[0]['updated_at']
+    if res.data and res.data[0].get('posted_at'):
+        ts = res.data[0]['posted_at']
         if isinstance(ts, str):
             if ts.endswith('Z'):
                 ts = ts[:-1] + '+00:00'

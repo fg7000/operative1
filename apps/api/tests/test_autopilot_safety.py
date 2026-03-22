@@ -282,7 +282,7 @@ class TestHealthStatus:
         from services.rate_limiter import get_health_status
 
         # 10 posts, all successful
-        mock_recent.return_value = [{'status': 'posted', 'updated_at': datetime.now(timezone.utc).isoformat()} for _ in range(10)]
+        mock_recent.return_value = [{'status': 'posted', 'posted_at': datetime.now(timezone.utc).isoformat()} for _ in range(10)]
         result = await get_health_status({'id': 'test'}, 'twitter')
         assert result['status'] == 'green'
         assert result['success_rate'] == 1.0

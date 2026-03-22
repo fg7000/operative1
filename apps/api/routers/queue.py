@@ -558,10 +558,10 @@ async def autopilot_log(
     # Get items from last 24h
     res = supabase.table('reply_queue').select(
         'id,status,platform,original_content,draft_reply,edited_reply,'
-        'confidence_score,engagement_metrics,created_at,updated_at,rejection_reason'
+        'confidence_score,engagement_metrics,created_at,posted_at,rejection_reason'
     ).eq('product_id', product_id) \
-        .gte('updated_at', cutoff) \
-        .order('updated_at', desc=True) \
+        .gte('created_at', cutoff) \
+        .order('created_at', desc=True) \
         .limit(500) \
         .execute()
 
@@ -587,7 +587,7 @@ async def autopilot_log(
             'posted_tweet_id': metrics.get('posted_tweet_id'),
             'error': item.get('rejection_reason'),
             'created_at': item.get('created_at'),
-            'updated_at': item.get('updated_at'),
+            'posted_at': item.get('posted_at'),
         }
 
         if item['status'] == 'auto_approved':

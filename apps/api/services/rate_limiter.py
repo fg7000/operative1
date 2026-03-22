@@ -81,23 +81,23 @@ async def get_posts_in_window(
         .eq('product_id', product_id) \
         .eq('platform', platform) \
         .eq('status', 'posted') \
-        .gte('updated_at', cutoff_str) \
+        .gte('posted_at', cutoff_str) \
         .execute()
 
     return res.count or 0
 
 
 async def get_recent_posts(product_id: str, platform: str, limit: int = 10) -> list:
-    """Get recent posts for health/streak calculation. Returns list of dicts with status and updated_at."""
+    """Get recent posts for health/streak calculation. Returns list of dicts with status and posted_at/created_at."""
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     cutoff_str = cutoff.isoformat()
 
-    res = supabase.table('reply_queue').select('status,updated_at,rejection_reason') \
+    res = supabase.table('reply_queue').select('status,posted_at,rejection_reason') \
         .eq('product_id', product_id) \
         .eq('platform', platform) \
         .in_('status', ['posted', 'failed']) \
-        .gte('updated_at', cutoff_str) \
-        .order('updated_at', desc=True) \
+        .gte('posted_at', cutoff_str) \
+        .order('posted_at', desc=True) \
         .limit(limit) \
         .execute()
 
@@ -106,31 +106,31 @@ async def get_recent_posts(product_id: str, platform: str, limit: int = 10) -> l
 
 async def get_last_post_time(product_id: str, platform: str) -> Optional[datetime]:
     """Get the timestamp of the most recent post for this product/platform."""
-    res = supabase.table('reply_queue').select('updated_at') \
+    res = supabase.table('reply_queue').select('posted_at') \
         .eq('product_id', product_id) \
         .eq('platform', platform) \
         .eq('status', 'posted') \
-        .order('updated_at', desc=True) \
+        .order('posted_at', desc=True) \
         .limit(1) \
         .execute()
 
-    if res.data and res.data[0].get('updated_at'):
-        return parse_timestamp(res.data[0]['updated_at'])
+    if res.data and res.data[0].get('posted_at'):
+        return parse_timestamp(res.data[0]['posted_at'])
     return None
 
 
 async def get_first_post_time(product_id: str, platform: str) -> Optional[datetime]:
     """Get the timestamp of the first ever post for this product/platform (account age)."""
-    res = supabase.table('reply_queue').select('updated_at') \
+    res = supabase.table('reply_queue').select('posted_at') \
         .eq('product_id', product_id) \
         .eq('platform', platform) \
         .eq('status', 'posted') \
-        .order('updated_at', desc=False) \
+        .order('posted_at', desc=False) \
         .limit(1) \
         .execute()
 
-    if res.data and res.data[0].get('updated_at'):
-        return parse_timestamp(res.data[0]['updated_at'])
+    if res.data and res.data[0].get('posted_at'):
+        return parse_timestamp(res.data[0]['posted_at'])
     return None
 
 
@@ -207,7 +207,7 @@ async def get_health_status(product: dict, platform: str = 'twitter') -> dict:
 
     # Count consecutive failures from most recent
     consecutive_failures = 0
-    for p in recent:  # Already ordered desc by updated_at
+    for p in recent:  # Already ordered desc by posted_at
         if p['status'] == 'failed':
             consecutive_failures += 1
         else:
@@ -239,7 +239,7 @@ async def get_failure_streak(product_id: str, platform: str = 'twitter') -> int:
         .eq('product_id', product_id) \
         .eq('platform', platform) \
         .in_('status', ['posted', 'failed']) \
-        .order('updated_at', desc=True) \
+        .order('posted_at', desc=True) \
         .limit(10) \
         .execute()
 
