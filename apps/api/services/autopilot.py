@@ -110,7 +110,7 @@ async def get_pending_items_for_product(product_id: str, platform: str, limit: i
         .eq('product_id', product_id) \
         .eq('platform', platform) \
         .eq('status', 'pending') \
-        .order('created_at', desc=False) \
+        .order('confidence_score', desc=True) \
         .limit(limit) \
         .execute()
 
