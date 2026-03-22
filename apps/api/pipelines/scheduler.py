@@ -15,8 +15,8 @@ def start_scheduler():
     from services.autopilot import run_autopilot_processor
     from services.broadcast_scheduler import check_scheduled_broadcasts
 
-    # Twitter: every 1 hour (24 runs/day)
-    scheduler.add_job(run_twitter_pipeline, IntervalTrigger(hours=1), id='twitter', replace_existing=True)
+    # Twitter: every 2 hours (12 runs/day) to control Apify costs
+    scheduler.add_job(run_twitter_pipeline, IntervalTrigger(hours=2), id='twitter', replace_existing=True)
     scheduler.add_job(run_reddit_pipeline, IntervalTrigger(minutes=15), id='reddit', replace_existing=True)
     scheduler.add_job(run_hn_pipeline, IntervalTrigger(minutes=10), id='hn', replace_existing=True)
     scheduler.add_job(run_linkedin_pipeline, IntervalTrigger(hours=2), id='linkedin', replace_existing=True)
