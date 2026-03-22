@@ -11,23 +11,46 @@ Autopilot criteria (configurable per-product):
 
 Flow:
 1. Get products with autopilot enabled
-2. For each product, get pending queue items
-3. Check if item meets autopilot thresholds
-4. Check per-product rate limits
-5. If yes to both: mark as "auto_approved"
-6. Process global queue (enforces account-level posting cadence)
+2. Pre-checks: pause status, heartbeat, failure streak
+3. For each product, get pending queue items
+4. Check if item meets autopilot thresholds
+5. Check per-product rate limits
+6. If yes to both: mark as "auto_approved"
+7. Process global queue (enforces account-level posting cadence)
+8. Post-processing: tier promotion/demotion checks
+
+Pause/Resume (scope 8):
+- autopilot.paused = true → indefinite manual pause
+- autopilot.paused_until = ISO timestamp → timed pause, auto-resumes
+
+Auto-pause on failure streak (scope 9):
+- 3+ consecutive failures → 2h pause
+- Fail after 2h resume → 6h pause
+- Fail after 6h resume → indefinite pause (manual resume required)
+- Streak derived from DB, not JSONB counter (resilient to crashes)
+
+Extension heartbeat (scope 10):
+- Extension pings POST /queue/extension-heartbeat every 60s
+- If autopilot enabled AND auto_approved items >30 min old AND no heartbeat
+  in 5 min → pause with reason "extension_offline"
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from services.database import supabase
-from services.rate_limiter import can_post
+from services.rate_limiter import (
+    can_post, get_health_status, get_failure_streak,
+    check_tier_promotion, check_tier_demotion
+)
 from services.poster import post_to_twitter
 from services.global_queue import can_post_globally, process_global_queue
 
 logger = logging.getLogger(__name__)
+
+# Event log max entries
+EVENT_LOG_MAX = 100
 
 
 def meets_autopilot_criteria(queue_item: dict, product: dict) -> tuple[bool, str]:
@@ -154,13 +177,216 @@ def extract_tweet_id(url: str) -> str:
     return ''
 
 
+def append_event_log(product: dict, event: str, details: dict) -> list:
+    """Append an event to the product's autopilot event log (capped at EVENT_LOG_MAX)."""
+    autopilot = product.get('autopilot') or {}
+    event_log = autopilot.get('event_log') or []
+    entry = {
+        'event': event,
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'details': details,
+    }
+    event_log.append(entry)
+    # Cap at max entries
+    if len(event_log) > EVENT_LOG_MAX:
+        event_log = event_log[-EVENT_LOG_MAX:]
+    return event_log
+
+
+def is_paused(product: dict) -> tuple[bool, str]:
+    """Check if autopilot is paused for a product.
+
+    Returns:
+        (is_paused, reason)
+    """
+    autopilot = product.get('autopilot') or {}
+
+    # Indefinite pause
+    if autopilot.get('paused', False):
+        return True, autopilot.get('pause_reason', 'manual_pause')
+
+    # Timed pause
+    paused_until = autopilot.get('paused_until')
+    if paused_until:
+        from services.rate_limiter import parse_timestamp
+        until = parse_timestamp(paused_until)
+        if until:
+            now = datetime.now(timezone.utc)
+            if until.tzinfo is None:
+                until = until.replace(tzinfo=timezone.utc)
+            if now < until:
+                return True, f"timed_pause_until:{paused_until}"
+            else:
+                # Timed pause expired — auto-resume
+                autopilot['paused_until'] = None
+                autopilot['pause_reason'] = None
+                event_log = append_event_log(product, 'auto_resume', {'reason': 'timed_pause_expired'})
+                autopilot['event_log'] = event_log
+                supabase.table('products').update({'autopilot': autopilot}).eq('id', product['id']).execute()
+                logger.info(f"Autopilot auto-resumed for product {product['id'][:8]} (timed pause expired)")
+
+    return False, ""
+
+
+def check_heartbeat(product: dict) -> bool:
+    """Check if extension heartbeat is recent enough.
+
+    Returns True if heartbeat is OK (or not applicable), False if stale.
+    """
+    autopilot = product.get('autopilot') or {}
+    last_heartbeat = autopilot.get('last_heartbeat')
+
+    if not last_heartbeat:
+        # No heartbeat recorded yet — check if there are stale auto_approved items
+        return True  # Can't determine without heartbeat data
+
+    from services.rate_limiter import parse_timestamp
+    hb_time = parse_timestamp(last_heartbeat)
+    if not hb_time:
+        return True
+
+    now = datetime.now(timezone.utc)
+    if hb_time.tzinfo is None:
+        hb_time = hb_time.replace(tzinfo=timezone.utc)
+
+    seconds_since = (now - hb_time).total_seconds()
+
+    # If heartbeat is older than 5 minutes, check for stale auto_approved items
+    if seconds_since > 300:
+        # Check if there are auto_approved items older than 30 minutes
+        cutoff = (now - timedelta(minutes=30)).isoformat()
+        stale_items = supabase.table('reply_queue').select('id', count='exact') \
+            .eq('product_id', product['id']) \
+            .eq('status', 'auto_approved') \
+            .lt('updated_at', cutoff) \
+            .execute()
+
+        if (stale_items.count or 0) > 0:
+            logger.warning(
+                f"Extension offline: product {product['id'][:8]} has stale auto_approved items "
+                f"and no heartbeat for {int(seconds_since)}s"
+            )
+            return False
+
+    return True
+
+
+async def handle_failure_streak(product: dict, platform: str = 'twitter') -> bool:
+    """Check and handle failure streak escalation.
+
+    Returns True if autopilot should be paused due to failure streak.
+    """
+    streak = await get_failure_streak(product['id'], platform)
+    autopilot = product.get('autopilot') or {}
+
+    if streak < 3:
+        return False
+
+    # Determine pause duration based on escalation level
+    last_pause_duration = autopilot.get('last_failure_pause_hours', 0)
+
+    if last_pause_duration == 0:
+        # First failure streak: 2 hour pause
+        pause_hours = 2
+    elif last_pause_duration <= 2:
+        # Second failure streak: 6 hour pause
+        pause_hours = 6
+    else:
+        # Third+ failure streak: indefinite pause
+        autopilot['paused'] = True
+        autopilot['pause_reason'] = 'failure_streak_indefinite'
+        autopilot['last_failure_pause_hours'] = 999
+        event_log = append_event_log(product, 'auto_pause', {
+            'reason': 'failure_streak_indefinite',
+            'streak': streak,
+            'action': 'indefinite_pause_requires_manual_resume',
+        })
+        autopilot['event_log'] = event_log
+        supabase.table('products').update({'autopilot': autopilot}).eq('id', product['id']).execute()
+        logger.warning(f"Autopilot INDEFINITELY PAUSED for product {product['id'][:8]} (streak={streak})")
+        return True
+
+    # Timed pause
+    pause_until = datetime.now(timezone.utc) + timedelta(hours=pause_hours)
+    autopilot['paused_until'] = pause_until.isoformat()
+    autopilot['pause_reason'] = f'failure_streak_{pause_hours}h'
+    autopilot['last_failure_pause_hours'] = pause_hours
+    event_log = append_event_log(product, 'auto_pause', {
+        'reason': f'failure_streak',
+        'streak': streak,
+        'pause_hours': pause_hours,
+        'paused_until': pause_until.isoformat(),
+    })
+    autopilot['event_log'] = event_log
+    supabase.table('products').update({'autopilot': autopilot}).eq('id', product['id']).execute()
+    logger.warning(f"Autopilot paused {pause_hours}h for product {product['id'][:8]} (streak={streak})")
+    return True
+
+
+async def check_and_apply_tier_changes(product: dict, platform: str = 'twitter'):
+    """Check for tier promotion or demotion and apply if warranted."""
+    autopilot = product.get('autopilot') or {}
+    current_tier = autopilot.get('tier', 0)
+
+    # Check promotion
+    new_tier = await check_tier_promotion(product, platform)
+    if new_tier is not None:
+        autopilot['tier'] = new_tier
+        autopilot['tier_started_at'] = datetime.now(timezone.utc).isoformat()
+        event_log = append_event_log(product, 'tier_promotion', {
+            'from': current_tier,
+            'to': new_tier,
+        })
+        autopilot['event_log'] = event_log
+        supabase.table('products').update({'autopilot': autopilot}).eq('id', product['id']).execute()
+        logger.info(f"Product {product['id'][:8]} promoted: tier {current_tier} -> {new_tier}")
+        return
+
+    # Check demotion
+    health = await get_health_status(product, platform)
+    demoted_tier = await check_tier_demotion(product, health)
+    if demoted_tier is not None:
+        autopilot['tier'] = demoted_tier
+        autopilot['tier_started_at'] = datetime.now(timezone.utc).isoformat()
+
+        # Track yellow_since for yellow health demotion tracking
+        if health['status'] == 'yellow' and not autopilot.get('yellow_since'):
+            autopilot['yellow_since'] = datetime.now(timezone.utc).isoformat()
+        elif health['status'] != 'yellow':
+            autopilot['yellow_since'] = None
+
+        event_log = append_event_log(product, 'tier_demotion', {
+            'from': current_tier,
+            'to': demoted_tier,
+            'health': health['status'],
+        })
+        autopilot['event_log'] = event_log
+        supabase.table('products').update({'autopilot': autopilot}).eq('id', product['id']).execute()
+        logger.info(f"Product {product['id'][:8]} demoted: tier {current_tier} -> {demoted_tier}")
+        return
+
+    # Track yellow_since transitions even without demotion
+    if health['status'] == 'yellow' and not autopilot.get('yellow_since'):
+        autopilot['yellow_since'] = datetime.now(timezone.utc).isoformat()
+        supabase.table('products').update({'autopilot': autopilot}).eq('id', product['id']).execute()
+    elif health['status'] != 'yellow' and autopilot.get('yellow_since'):
+        autopilot['yellow_since'] = None
+        supabase.table('products').update({'autopilot': autopilot}).eq('id', product['id']).execute()
+
+
 async def run_autopilot_processor():
     """
     Main autopilot processor job.
 
+    Pre-checks (per-product):
+    0. Skip if paused (manual or timed)
+    1. Check failure streak → auto-pause if 3+ consecutive failures
+    2. Check heartbeat → pause if extension offline with stale items
+    3. Check tier promotion/demotion
+
     Two phases:
-    1. Approval phase: Mark qualifying items as auto_approved
-    2. Posting phase: Process global queue to post approved items
+    Phase 1: Approval — mark qualifying items as auto_approved
+    Phase 2: Posting — process global queue to post approved items
 
     This separation allows per-product rate limits during approval
     and account-level rate limits during posting.
@@ -169,12 +395,15 @@ async def run_autopilot_processor():
 
     stats = {
         'products_checked': 0,
+        'products_paused': 0,
+        'products_heartbeat_offline': 0,
         'items_approved': 0,
         'items_skipped': 0,
         'items_rate_limited': 0,
         'users_processed': 0,
         'posts_attempted': 0,
         'posts_succeeded': 0,
+        'tier_changes': 0,
     }
 
     try:
@@ -188,6 +417,42 @@ async def run_autopilot_processor():
 
         for product in products:
             product_name = product.get('name', product['id'][:8])
+
+            # Pre-check 0: Is autopilot paused?
+            paused, pause_reason = is_paused(product)
+            if paused:
+                stats['products_paused'] += 1
+                logger.debug(f"Autopilot: {product_name} paused ({pause_reason})")
+                continue
+
+            # Pre-check 1: Failure streak
+            should_pause = await handle_failure_streak(product, 'twitter')
+            if should_pause:
+                stats['products_paused'] += 1
+                continue
+
+            # Pre-check 2: Extension heartbeat
+            heartbeat_ok = check_heartbeat(product)
+            if not heartbeat_ok:
+                stats['products_heartbeat_offline'] += 1
+                # Auto-pause with extension_offline reason
+                autopilot = product.get('autopilot') or {}
+                autopilot['paused'] = True
+                autopilot['pause_reason'] = 'extension_offline'
+                event_log = append_event_log(product, 'auto_pause', {
+                    'reason': 'extension_offline',
+                    'last_heartbeat': autopilot.get('last_heartbeat'),
+                })
+                autopilot['event_log'] = event_log
+                supabase.table('products').update({'autopilot': autopilot}).eq('id', product['id']).execute()
+                logger.warning(f"Autopilot paused for {product_name}: extension offline")
+                continue
+
+            # Pre-check 3: Tier promotion/demotion
+            try:
+                await check_and_apply_tier_changes(product, 'twitter')
+            except Exception as e:
+                logger.error(f"Tier check error for {product_name}: {e}")
 
             # Process Twitter queue
             pending = await get_pending_items_for_product(product['id'], 'twitter', limit=5)
@@ -230,6 +495,20 @@ async def run_autopilot_processor():
 
             if result['posted']:
                 stats['posts_succeeded'] += 1
+                # Reset failure pause escalation on successful post
+                queue_id = result.get('queue_id')
+                if queue_id:
+                    item_res = supabase.table('reply_queue').select('product_id').eq('id', queue_id).execute()
+                    if item_res.data:
+                        pid = item_res.data[0]['product_id']
+                        prod_res = supabase.table('products').select('autopilot').eq('id', pid).execute()
+                        if prod_res.data:
+                            ap = prod_res.data[0].get('autopilot') or {}
+                            if ap.get('last_failure_pause_hours', 0) > 0:
+                                ap['last_failure_pause_hours'] = 0
+                                supabase.table('products').update({'autopilot': ap}).eq('id', pid).execute()
+                                logger.info(f"Reset failure pause escalation for product {pid[:8]}")
+
                 logger.info(f"Autopilot: posted queue item {result['queue_id'][:8]} for user {user_id[:8]}")
             else:
                 logger.debug(f"Autopilot: global queue result: {result['reason']}")
@@ -240,7 +519,8 @@ async def run_autopilot_processor():
     logger.info(
         f"Autopilot complete: {stats['items_approved']} approved, "
         f"{stats['items_skipped']} skipped, {stats['items_rate_limited']} rate limited, "
-        f"{stats['posts_succeeded']}/{stats['posts_attempted']} posted"
+        f"{stats['posts_succeeded']}/{stats['posts_attempted']} posted, "
+        f"{stats['products_paused']} paused, {stats['products_heartbeat_offline']} offline"
     )
 
     return stats
