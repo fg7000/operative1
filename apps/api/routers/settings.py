@@ -142,6 +142,7 @@ async def save_twitter_cookies(body: SaveTwitterCookiesRequest):
                 'product_id': body.product_id,
                 'platform': 'twitter',
                 'credentials_encrypted': encrypted,
+                'handle': body.twitter_handle or 'pending',
             }).execute()
             logger.info(f"Saved new Twitter credentials for product {body.product_id}")
 
