@@ -114,12 +114,7 @@ app = FastAPI(title="Operative1 API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(HTTPSRedirectFixMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://operative1.vercel.app",
-        "https://operative1-*.vercel.app",
-        "http://localhost:3000",
-        "chrome-extension://hijlbfcjchioeciejpiejadapjgmbncn",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
