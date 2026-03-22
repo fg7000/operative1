@@ -72,13 +72,11 @@ def meets_autopilot_criteria(queue_item: dict, product: dict) -> tuple[bool, str
     # Get thresholds
     min_relevance = autopilot.get('min_relevance_score', 7)
     min_confidence = autopilot.get('min_confidence', 0.8)
-    require_no_mention = autopilot.get('require_no_product_mention', True)
 
     # Get item scores from engagement_metrics (where they're stored)
     metrics = queue_item.get('engagement_metrics', {}) or {}
     relevance_score = metrics.get('relevance_score', 0)
     confidence = queue_item.get('confidence_score', 0)
-    mentions_product = queue_item.get('mentions_product', False)
 
     # Check relevance score
     if relevance_score < min_relevance:
@@ -87,10 +85,6 @@ def meets_autopilot_criteria(queue_item: dict, product: dict) -> tuple[bool, str
     # Check confidence
     if confidence < min_confidence:
         return False, f"confidence_too_low:{confidence}<{min_confidence}"
-
-    # Check product mention
-    if require_no_mention and mentions_product:
-        return False, "mentions_product"
 
     return True, "approved"
 

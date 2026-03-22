@@ -108,19 +108,10 @@ class TestAutopilotCriteria:
         assert meets is False
         assert 'confidence_too_low' in reason
 
-    def test_fails_product_mention(self):
+    def test_allows_product_mention(self):
         from services.autopilot import meets_autopilot_criteria
 
-        product = {'autopilot': {'enabled': True, 'min_relevance_score': 7, 'min_confidence': 0.8, 'require_no_product_mention': True}}
-        item = {'engagement_metrics': {'relevance_score': 9}, 'confidence_score': 0.95, 'mentions_product': True}
-        meets, reason = meets_autopilot_criteria(item, product)
-        assert meets is False
-        assert reason == 'mentions_product'
-
-    def test_allows_product_mention_when_not_required(self):
-        from services.autopilot import meets_autopilot_criteria
-
-        product = {'autopilot': {'enabled': True, 'min_relevance_score': 7, 'min_confidence': 0.8, 'require_no_product_mention': False}}
+        product = {'autopilot': {'enabled': True, 'min_relevance_score': 7, 'min_confidence': 0.8}}
         item = {'engagement_metrics': {'relevance_score': 9}, 'confidence_score': 0.95, 'mentions_product': True}
         meets, reason = meets_autopilot_criteria(item, product)
         assert meets is True
