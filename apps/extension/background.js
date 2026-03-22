@@ -166,8 +166,11 @@ async function postTweet(text, replyToTweetId, mediaIds = [], passedCookies = nu
   console.log('[Operative1] Media IDs:', mediaIds);
   console.log('[Operative1] Using passed cookies:', passedCookies ? 'yes' : 'no (falling back to browser)');
 
-  const cookies = passedCookies || await getTwitterCookies();
-  console.log('[Operative1] Cookies retrieved:', cookies ? 'yes' : 'no');
+  // Always prefer fresh browser cookies (ct0 rotates frequently)
+  // Fall back to passed/stored cookies only if browser cookies unavailable
+  const browserCookies = await getTwitterCookies();
+  const cookies = browserCookies || passedCookies;
+  console.log('[Operative1] Cookie source:', browserCookies ? 'browser (fresh)' : passedCookies ? 'passed (stored)' : 'none');
 
   if (!cookies) {
     console.log('[Operative1] ERROR: No cookies found');
