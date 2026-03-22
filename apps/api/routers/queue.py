@@ -10,14 +10,27 @@ Endpoints:
 - PATCH /queue/{id}/edit — Edit reply text
 - POST /queue/{id}/mark-posted — Mark as posted (called by extension)
 - POST /queue/{id}/mark-failed — Mark as failed (called by extension)
+
+Autopilot endpoints:
+- GET /queue/auto-approved — Items ready for extension to post (product token auth)
+- GET /queue/autopilot-log — Last 24h autopilot activity log
+- GET /queue/health — Account health status (green/yellow/red)
+- POST /queue/extension-heartbeat — Extension liveness ping (product token auth)
+- POST /queue/pause — Pause autopilot (indefinite or timed)
+- POST /queue/resume — Resume autopilot
+- POST /queue/generate-token — Generate product-scoped API token
 """
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
+from datetime import datetime, timezone, timedelta
 from pipelines.twitter import run_twitter_pipeline
 from services.agent_prompts import QUEUE_RANKER_PROMPT
-from services.auth import get_current_user, verify_product_ownership
+from services.auth import (
+    get_current_user, verify_product_ownership,
+    get_user_or_product_token, save_product_token,
+)
 from dotenv import load_dotenv
 import httpx
 import json
@@ -420,15 +433,18 @@ class MarkFailedRequest(BaseModel):
 async def mark_posted(
     queue_id: str,
     body: MarkPostedRequest,
-    user_id: str = Depends(get_current_user)
+    auth: tuple = Depends(get_user_or_product_token)
 ):
-    """Mark a queue item as posted (called by frontend after extension posts successfully).
+    """Mark a queue item as posted (called by frontend or extension autopilot).
 
+    Accepts either JWT or product-scoped token.
     NEVER DELETE — audit trail required. Status updates only.
     """
     from services.database import supabase
 
-    await verify_queue_item_ownership(user_id, queue_id)
+    user_id, token_product_id = auth
+    if not token_product_id:
+        await verify_queue_item_ownership(user_id, queue_id)
 
     existing = supabase.table('reply_queue').select('engagement_metrics').eq('id', queue_id).execute()
     metrics = (existing.data[0].get('engagement_metrics') or {}) if existing.data else {}
@@ -448,15 +464,18 @@ async def mark_posted(
 async def mark_failed(
     queue_id: str,
     body: MarkFailedRequest,
-    user_id: str = Depends(get_current_user)
+    auth: tuple = Depends(get_user_or_product_token)
 ):
-    """Mark a queue item as failed (called by frontend when extension posting fails).
+    """Mark a queue item as failed (called by frontend or extension autopilot).
 
+    Accepts either JWT or product-scoped token.
     NEVER DELETE — audit trail required. Status updates only.
     """
     from services.database import supabase
 
-    await verify_queue_item_ownership(user_id, queue_id)
+    user_id, token_product_id = auth
+    if not token_product_id:
+        await verify_queue_item_ownership(user_id, queue_id)
 
     # STATUS UPDATE ONLY — no deletions allowed
     supabase.table('reply_queue').update({
@@ -464,3 +483,291 @@ async def mark_failed(
         'rejection_reason': body.error or 'Extension posting failed'
     }).eq('id', queue_id).execute()
     return {"status": "failed"}
+
+
+# ─── Autopilot Endpoints ─────────────────────────────────────────
+
+
+@router.get("/auto-approved")
+async def list_auto_approved(
+    product_id: str,
+    auth: tuple = Depends(get_user_or_product_token)
+):
+    """List auto_approved items ready for extension to post.
+
+    Accepts either JWT or product-scoped token.
+    Excludes items that already have a posted_tweet_id (double-post prevention).
+    """
+    from services.database import supabase
+
+    user_id, token_product_id = auth
+
+    # If authed via product token, enforce product scope
+    if token_product_id and token_product_id != product_id:
+        raise HTTPException(status_code=403, detail="Token does not match product_id")
+
+    if not token_product_id:
+        await verify_product_ownership(user_id, product_id)
+
+    res = supabase.table('reply_queue').select('*') \
+        .eq('product_id', product_id) \
+        .eq('status', 'auto_approved') \
+        .order('created_at', desc=False) \
+        .limit(10) \
+        .execute()
+
+    # Filter out items that already have a posted_tweet_id (double-post prevention)
+    items = []
+    for item in (res.data or []):
+        metrics = item.get('engagement_metrics') or {}
+        if not metrics.get('posted_tweet_id'):
+            items.append(item)
+
+    return items
+
+
+@router.get("/autopilot-log")
+async def autopilot_log(
+    product_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """Return last 24h autopilot activity for monitoring.
+
+    Returns auto-approved, posted, and failed items with timestamps,
+    scores, reply mode, and tweet text snippets. Also includes
+    aggregate stats and current tier/health status.
+    """
+    from services.database import supabase
+    from services.rate_limiter import get_health_status
+
+    await verify_product_ownership(user_id, product_id)
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+
+    # Get items from last 24h
+    res = supabase.table('reply_queue').select(
+        'id,status,platform,original_content,draft_reply,edited_reply,'
+        'confidence_score,engagement_metrics,created_at,updated_at,rejection_reason'
+    ).eq('product_id', product_id) \
+        .gte('updated_at', cutoff) \
+        .order('updated_at', desc=True) \
+        .limit(500) \
+        .execute()
+
+    items = res.data or []
+
+    # Categorize
+    auto_approved = []
+    posted = []
+    failed = []
+    skipped = []
+
+    for item in items:
+        metrics = item.get('engagement_metrics') or {}
+        summary = {
+            'id': item['id'],
+            'status': item['status'],
+            'platform': item.get('platform', 'twitter'),
+            'tweet_snippet': (item.get('original_content') or '')[:100],
+            'reply_snippet': (item.get('edited_reply') or item.get('draft_reply') or '')[:100],
+            'reply_mode': metrics.get('reply_mode'),
+            'relevance_score': metrics.get('relevance_score'),
+            'confidence': item.get('confidence_score'),
+            'posted_tweet_id': metrics.get('posted_tweet_id'),
+            'error': item.get('rejection_reason'),
+            'created_at': item.get('created_at'),
+            'updated_at': item.get('updated_at'),
+        }
+
+        if item['status'] == 'auto_approved':
+            auto_approved.append(summary)
+        elif item['status'] == 'posted':
+            posted.append(summary)
+        elif item['status'] == 'failed':
+            failed.append(summary)
+        else:
+            skipped.append(summary)
+
+    # Get product for tier info
+    product_res = supabase.table('products').select('autopilot').eq('id', product_id).single().execute()
+    autopilot = (product_res.data.get('autopilot') or {}) if product_res.data else {}
+
+    # Get health
+    product_data = product_res.data or {'id': product_id}
+    health = await get_health_status(product_data, 'twitter')
+
+    return {
+        'auto_approved': auto_approved,
+        'posted': posted,
+        'failed': failed,
+        'skipped': skipped,
+        'stats': {
+            'total_auto_approved': len(auto_approved),
+            'total_posted': len(posted),
+            'total_failed': len(failed),
+            'total_skipped': len(skipped),
+        },
+        'tier': autopilot.get('tier', 0),
+        'health': health,
+        'paused': autopilot.get('paused', False),
+        'paused_until': autopilot.get('paused_until'),
+        'pause_reason': autopilot.get('pause_reason'),
+        'last_heartbeat': autopilot.get('last_heartbeat'),
+        'event_log': (autopilot.get('event_log') or [])[-20:],  # Last 20 events
+    }
+
+
+@router.get("/health")
+async def get_health(
+    product_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """Get account health status for a product."""
+    from services.database import supabase
+    from services.rate_limiter import get_health_status, get_rate_limit_status
+
+    await verify_product_ownership(user_id, product_id)
+
+    product_res = supabase.table('products').select('*').eq('id', product_id).single().execute()
+    product = product_res.data or {'id': product_id}
+
+    health = await get_health_status(product, 'twitter')
+    rate_status = await get_rate_limit_status(product, 'twitter')
+
+    autopilot = product.get('autopilot') or {}
+
+    return {
+        'health': health,
+        'rate_limit': rate_status,
+        'tier': autopilot.get('tier', 0),
+        'paused': autopilot.get('paused', False),
+        'paused_until': autopilot.get('paused_until'),
+        'pause_reason': autopilot.get('pause_reason'),
+        'last_heartbeat': autopilot.get('last_heartbeat'),
+    }
+
+
+class HeartbeatRequest(BaseModel):
+    product_id: str
+
+
+@router.post("/extension-heartbeat")
+async def extension_heartbeat(
+    body: HeartbeatRequest,
+    auth: tuple = Depends(get_user_or_product_token)
+):
+    """Extension heartbeat ping. Updates last_heartbeat timestamp.
+
+    Accepts either JWT or product-scoped token.
+    """
+    from services.database import supabase
+
+    user_id, token_product_id = auth
+
+    # If authed via product token, enforce product scope
+    if token_product_id and token_product_id != body.product_id:
+        raise HTTPException(status_code=403, detail="Token does not match product_id")
+
+    if not token_product_id:
+        await verify_product_ownership(user_id, body.product_id)
+
+    # Update heartbeat timestamp
+    product_res = supabase.table('products').select('autopilot').eq('id', body.product_id).single().execute()
+    autopilot = (product_res.data.get('autopilot') or {}) if product_res.data else {}
+    autopilot['last_heartbeat'] = datetime.now(timezone.utc).isoformat()
+
+    supabase.table('products').update({'autopilot': autopilot}).eq('id', body.product_id).execute()
+
+    return {"status": "ok", "timestamp": autopilot['last_heartbeat']}
+
+
+class PauseRequest(BaseModel):
+    product_id: str
+    duration_hours: Optional[int] = None  # None = indefinite
+
+
+@router.post("/pause")
+async def pause_autopilot(
+    body: PauseRequest,
+    user_id: str = Depends(get_current_user)
+):
+    """Pause autopilot for a product. Indefinite or timed."""
+    from services.database import supabase
+    from services.autopilot import append_event_log
+
+    await verify_product_ownership(user_id, body.product_id)
+
+    product_res = supabase.table('products').select('*').eq('id', body.product_id).single().execute()
+    product = product_res.data or {}
+    autopilot = product.get('autopilot') or {}
+
+    if body.duration_hours:
+        pause_until = datetime.now(timezone.utc) + timedelta(hours=body.duration_hours)
+        autopilot['paused_until'] = pause_until.isoformat()
+        autopilot['pause_reason'] = f'manual_timed_{body.duration_hours}h'
+    else:
+        autopilot['paused'] = True
+        autopilot['pause_reason'] = 'manual_pause'
+
+    event_log = append_event_log(product, 'manual_pause', {
+        'duration_hours': body.duration_hours,
+        'user_id': user_id,
+    })
+    autopilot['event_log'] = event_log
+
+    supabase.table('products').update({'autopilot': autopilot}).eq('id', body.product_id).execute()
+
+    return {
+        "status": "paused",
+        "paused_until": autopilot.get('paused_until'),
+        "indefinite": body.duration_hours is None,
+    }
+
+
+class ResumeRequest(BaseModel):
+    product_id: str
+
+
+@router.post("/resume")
+async def resume_autopilot(
+    body: ResumeRequest,
+    user_id: str = Depends(get_current_user)
+):
+    """Resume autopilot for a product."""
+    from services.database import supabase
+    from services.autopilot import append_event_log
+
+    await verify_product_ownership(user_id, body.product_id)
+
+    product_res = supabase.table('products').select('*').eq('id', body.product_id).single().execute()
+    product = product_res.data or {}
+    autopilot = product.get('autopilot') or {}
+
+    autopilot['paused'] = False
+    autopilot['paused_until'] = None
+    autopilot['pause_reason'] = None
+    autopilot['last_failure_pause_hours'] = 0  # Reset escalation
+
+    event_log = append_event_log(product, 'manual_resume', {'user_id': user_id})
+    autopilot['event_log'] = event_log
+
+    supabase.table('products').update({'autopilot': autopilot}).eq('id', body.product_id).execute()
+
+    return {"status": "resumed"}
+
+
+class GenerateTokenRequest(BaseModel):
+    product_id: str
+
+
+@router.post("/generate-token")
+async def generate_token(
+    body: GenerateTokenRequest,
+    user_id: str = Depends(get_current_user)
+):
+    """Generate a product-scoped API token for extension authentication."""
+    await verify_product_ownership(user_id, body.product_id)
+
+    token = await save_product_token(body.product_id)
+
+    return {"token": token, "product_id": body.product_id}
