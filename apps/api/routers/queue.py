@@ -599,8 +599,8 @@ async def autopilot_log(
         else:
             skipped.append(summary)
 
-    # Get product for tier info
-    product_res = supabase.table('products').select('autopilot').eq('id', product_id).single().execute()
+    # Get product for tier info (must include 'id' for get_health_status)
+    product_res = supabase.table('products').select('id,autopilot').eq('id', product_id).single().execute()
     autopilot = (product_res.data.get('autopilot') or {}) if product_res.data else {}
 
     # Get health
@@ -646,11 +646,17 @@ async def get_health(
     rate_status = await get_rate_limit_status(product, 'twitter')
 
     autopilot = product.get('autopilot') or {}
+    tier = autopilot.get('tier', 0)
+
+    # Import tier config for daily_cap
+    from services.rate_limiter import TIER_CONFIG
+    tier_config = TIER_CONFIG.get(tier, TIER_CONFIG[0])
 
     return {
-        'health': health,
-        'rate_limit': rate_status,
-        'tier': autopilot.get('tier', 0),
+        'health': health.get('status', 'green'),  # Flatten to string for dashboard
+        'tier': tier,
+        'daily_cap': tier_config['daily_cap'],
+        'posts_today': health.get('total_posts_24h', 0),
         'paused': autopilot.get('paused', False),
         'paused_until': autopilot.get('paused_until'),
         'pause_reason': autopilot.get('pause_reason'),

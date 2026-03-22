@@ -190,11 +190,14 @@ function AutopilotIndicator() {
     setActionLoading(true)
     try {
       if (isPaused) {
-        await apiFetch(`/queue/resume?product_id=${selectedProductId}`, { method: 'POST' })
-      } else {
-        await apiFetch(`/queue/pause?product_id=${selectedProductId}`, {
+        await apiFetch(`/queue/resume`, {
           method: 'POST',
-          body: JSON.stringify({})
+          body: JSON.stringify({ product_id: selectedProductId })
+        })
+      } else {
+        await apiFetch(`/queue/pause`, {
+          method: 'POST',
+          body: JSON.stringify({ product_id: selectedProductId })
         })
       }
       const data = await apiFetch<HealthData>(`/queue/health?product_id=${selectedProductId}`)
